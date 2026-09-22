@@ -1,0 +1,19 @@
+# Sanal ortam (En ağır kısım)
+.venv/
+venv/
+ENV/
+
+# Reflex ve Node önbellekleri (İkinci en ağır kısım)
+.web/
+node_modules/
+
+# Python derleme dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Geçici indirmeler ve çıktılar
+downloads/
+*.docx
+*.pdf
+.DS_Store
