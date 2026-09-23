@@ -2,6 +2,7 @@ import reflex as rx
 from .technical_scope_state import TechnicalScopeState
 from .quote_builder import sidebar
 
+
 def card_header_text(num_str: str, text_str: str) -> rx.Component:
     return rx.text(
         rx.text.span(num_str, font_weight="bold", color="#38bdf8"),
@@ -9,6 +10,7 @@ def card_header_text(num_str: str, text_str: str) -> rx.Component:
         font_size="11.5px",
         letter_spacing="0.5px",
     )
+
 
 def upload_box() -> rx.Component:
     return rx.card(
@@ -25,12 +27,16 @@ def upload_box() -> rx.Component:
                     rx.vstack(
                         rx.hstack(
                             rx.text("Dinamik Şartname Analizi (AI / NLP Motoru)", font_size="13.5px", font_weight="bold", color="#ffffff"),
-                            rx.badge("Otomatik Kapsam & ATEX Tespiti", color_scheme="purple", variant="surface", radius="full", size="1"),
+                            rx.cond(
+                                TechnicalScopeState.tespit_edilen_tip != "",
+                                rx.badge(TechnicalScopeState.tespit_edilen_tip, color_scheme="green", variant="surface", radius="full", size="1"),
+                                rx.badge("Petrol Tesisleri & ATEX Odaklı", color_scheme="purple", variant="surface", radius="full", size="1"),
+                            ),
                             spacing="2",
                             align_items="center",
                         ),
                         rx.text(
-                            "Müşteri teknik şartnamesini yükleyin; sistem iş tipini (Temin / Montaj), ATEX sınıflarını ve kapsam sınırlarını otomatik ayrıştırsın.",
+                            "Müşteri teknik şartnamesini yükleyin; sistem kurum, referans no, iş kapsamı, TAS entegrasyonu ve sorumluluk sınırlarını otomatik ayrıştırsın.",
                             font_size="12px",
                             color="#94a3b8",
                         ),
@@ -59,7 +65,7 @@ def upload_box() -> rx.Component:
                 align_items="center",
             ),
 
-            # Geniş & Konforlu Drag & Drop (Sürükle-Bırak) Alanı
+            # Geniş Drag & Drop Alanı
             rx.upload(
                 rx.vstack(
                     rx.box(
@@ -79,7 +85,6 @@ def upload_box() -> rx.Component:
                         rx.text("•", color="#475569", font_size="11.5px"),
                         rx.text("Maks. 50 MB", font_size="11.5px", color="#64748b"),
                         rx.text("•", color="#475569", font_size="11.5px"),
-                        # Seçilen dosya varsa adını yeşil etiketle anında gösterir
                         rx.foreach(
                             rx.selected_files("sartname_pdf_upload"),
                             lambda f: rx.badge(rx.icon("file-check", size=12), f, color_scheme="green", variant="solid", radius="full", size="1")
@@ -125,12 +130,18 @@ def feedback_box() -> rx.Component:
                 rx.hstack(
                     rx.icon("brain-circuit", size=17, color="#10b981"),
                     rx.text("NLP Geri Bildirim & Kendi Kendine Öğrenme (Feedback Loop)", font_size="12.5px", font_weight="bold", color="#ffffff"),
-                    rx.badge("Model Hafızası", color_scheme="green", variant="surface", radius="full", size="1"),
+                    rx.badge(
+                        f"{TechnicalScopeState.saved_feedback_count} Kayıtlı Tercih",
+                        color_scheme="green",
+                        variant="surface",
+                        radius="full",
+                        size="1"
+                    ),
                     spacing="2",
                     align_items="center",
                 ),
                 rx.text(
-                    "Yukarıdaki metin kutularında yaptığınız düzeltmeleri kaydedin. Sistem bu şartname türünü hafızaya alarak bir sonraki seferde tercihlerinizi otomatik hatırlar.",
+                    "Metin kutularında yaptığınız düzeltmeleri kaydedin. Model gelecekte benzer kurum şartnamelerinde bu tercihleri otomatik uygulayacaktır.",
                     font_size="11.5px",
                     color="#94a3b8",
                 ),
@@ -140,7 +151,7 @@ def feedback_box() -> rx.Component:
             rx.spacer(),
             rx.hstack(
                 rx.input(
-                    placeholder="Düzeltme Notu (örn: 'Ex d tekrarı silindi, CIP teslim eklendi')",
+                    placeholder="Düzeltme Notu (örn: 'Ada-5 katık enjektörleri eklendi')",
                     value=TechnicalScopeState.feedback_notes,
                     on_change=TechnicalScopeState.set_feedback_notes,
                     width="320px",
@@ -208,7 +219,7 @@ def technical_scope_main() -> rx.Component:
             # AI / NLP Şartname Yükleme ve Otomasyon Kutusu
             upload_box(),
 
-            # Satır 1: 1. Kart (Teklif Bilgileri) ve 2. Kart (Giriş Yazısı)
+            # Satır 1: Teklif Bilgileri & Giriş Yazısı
             rx.grid(
                 rx.card(
                     rx.vstack(
@@ -233,6 +244,7 @@ def technical_scope_main() -> rx.Component:
                                 on_change=TechnicalScopeState.set_sartname_no,
                                 width="100%",
                                 size="2",
+                                placeholder="Örn: TS-GA-DOL-004-R00",
                             ),
                             align_items="start",
                             width="100%",
@@ -245,6 +257,7 @@ def technical_scope_main() -> rx.Component:
                                 on_change=TechnicalScopeState.set_muhatap_hitap,
                                 width="100%",
                                 size="2",
+                                placeholder="Örn: Güzel Enerji Akaryakıt A.Ş. - Teknik Müdürlük",
                             ),
                             align_items="start",
                             width="100%",
@@ -271,6 +284,7 @@ def technical_scope_main() -> rx.Component:
                             border="1px solid #1e293b",
                             font_size="12.5px",
                             line_height="1.5",
+                            placeholder="Şartname analiz edildiğinde otomatik oluşturulur...",
                         ),
                         spacing="2",
                         width="100%",
@@ -285,20 +299,21 @@ def technical_scope_main() -> rx.Component:
                 width="100%",
             ),
 
-            # Satır 2: 3. İŞ KAPSAMI MADDELERİ
+            # Satır 2: İş Kapsamı Maddeleri
             rx.card(
                 rx.vstack(
                     card_header_text("3. ", "İŞ KAPSAMI MADDELERİ (SCOPE OF WORK)"),
                     rx.text_area(
                         value=TechnicalScopeState.is_kapsami,
                         on_change=TechnicalScopeState.set_is_kapsami,
-                        height="130px",
+                        height="180px",
                         width="100%",
                         background="#070b14",
                         border="1px solid #1e293b",
                         font_size="12px",
                         font_family="monospace",
                         line_height="1.6",
+                        placeholder="İş kapsamı maddeleri...",
                     ),
                     spacing="2",
                     width="100%",
@@ -310,7 +325,7 @@ def technical_scope_main() -> rx.Component:
                 width="100%",
             ),
 
-            # Satır 3: 4. Kart (İşveren Sorumlulukları) ve 5. Kart (Hariç Tutulanlar)
+            # Satır 3: İşveren Sorumlulukları ve Hariç Tutulanlar
             rx.grid(
                 rx.card(
                     rx.vstack(
@@ -318,7 +333,7 @@ def technical_scope_main() -> rx.Component:
                         rx.text_area(
                             value=TechnicalScopeState.isveren_sorumluluklari,
                             on_change=TechnicalScopeState.set_isveren_sorumluluklari,
-                            height="95px",
+                            height="110px",
                             width="100%",
                             background="#070b14",
                             border="1px solid #1e293b",
@@ -340,7 +355,7 @@ def technical_scope_main() -> rx.Component:
                         rx.text_area(
                             value=TechnicalScopeState.haric_tutulanlar,
                             on_change=TechnicalScopeState.set_haric_tutulanlar,
-                            height="95px",
+                            height="110px",
                             width="100%",
                             background="#070b14",
                             border="1px solid #1e293b",
@@ -388,6 +403,7 @@ def technical_scope_main() -> rx.Component:
         background="#060913",
     )
 
+
 def technical_scope_page() -> rx.Component:
     return rx.hstack(
         sidebar(),
@@ -396,4 +412,5 @@ def technical_scope_page() -> rx.Component:
         width="100%",
         height="100vh",
         overflow="hidden",
+        on_mount=TechnicalScopeState.on_load,
     )

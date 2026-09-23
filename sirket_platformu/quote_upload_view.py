@@ -330,7 +330,9 @@ def quote_upload_main() -> rx.Component:
                                         rx.table.column_header_cell("AÇIKLAMA / MALZEME TANIMI"),
                                         rx.table.column_header_cell("MİKTAR", text_align="center", width="120px"),
                                         rx.table.column_header_cell("BİRİM SATIŞ", text_align="right", width="150px"),
-                                        rx.table.column_header_cell("TOPLAM TUTAR (TL)", text_align="right", width="170px"),
+                                        rx.table.column_header_cell(
+                                                f"TOPLAM TUTAR ({QuoteUploadState.para_birimi_sembol})"
+                                                    ),
                                     )
                                 ),
                                 rx.table.body(

@@ -2,6 +2,25 @@ import pdfplumber
 import re
 import pandas as pd
 
+
+def detect_currency_and_symbol(raw_text: str) -> tuple[str, str]:
+    """
+    Metin içerisinden para birimini ve sembolünü yakalar.
+    Döndürür: (kod: 'USD' | 'EUR' | 'TRY', sembol: '$' | '€' | '₺')
+    """
+    text_lower = raw_text.lower()
+    
+    # 1. Doğrudan sembol kontrolü
+    if "$" in raw_text or "usd" in text_lower or "dolar" in text_lower:
+        return "USD", "$"
+    elif "€" in raw_text or "eur" in text_lower or "euro" in text_lower:
+        return "EUR", "€"
+    elif "₺" in raw_text or "tl" in text_lower or "try" in text_lower:
+        return "TRY", "₺"
+        
+    return "TRY", "₺"
+
+
 def tr_lower(metin: str) -> str:
     if not metin:
         return ""

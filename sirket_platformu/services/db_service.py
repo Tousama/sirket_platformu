@@ -2,7 +2,7 @@ import sqlite3
 import os
 from typing import List, Dict, Any, Optional
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "petrotek_platform.db")
+DB_PATH = "teklifler.db"
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -167,3 +167,62 @@ def get_all_teklifler_from_db() -> List[Dict[str, Any]]:
             sonuc.append(t_dict)
             
         return sonuc
+    
+    
+def get_teklif_by_kod(kod: str) -> Dict[str, Any]:
+    """Belirtilen koda ait teklif kaydını döndürür."""
+    teklifler = get_all_teklifler_from_db()
+    for t in teklifler:
+        if t.get("kod") == kod or t.get("teklif_kodu") == kod:
+            return t
+    return {}
+
+
+def save_teklif_to_db(teklif_data: Dict[str, Any]):
+    """Teklifi veritabanında günceller veya yoksa yeni kayıt olarak ekler."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    kod = teklif_data.get("kod") or teklif_data.get("teklif_kodu")
+    musteri = teklif_data.get("musteri", "")
+    konu = teklif_data.get("konu", "")
+    sorumlu = teklif_data.get("sorumlu", "")
+    tarih = teklif_data.get("teklif_tarihi", "")
+    durum = teklif_data.get("durum", "Müşteride")
+    yaslanma = int(teklif_data.get("yaslanma_gun", 0))
+    satis_try = float(teklif_data.get("satis_try", 0.0) or teklif_data.get("satis_toplam", 0.0))
+    maliyet_try = float(teklif_data.get("maliyet_try", 0.0) or teklif_data.get("maliyet_toplam", 0.0))
+    kalemler_json = json.dumps(teklif_data.get("kalemler", []), ensure_ascii=False)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS teklifler (
+            kod TEXT PRIMARY KEY,
+            musteri TEXT,
+            konu TEXT,
+            sorumlu TEXT,
+            teklif_tarihi TEXT,
+            durum TEXT,
+            yaslanma_gun INTEGER,
+            satis_try REAL,
+            maliyet_try REAL,
+            kalemler TEXT
+        )
+    """)
+
+    cursor.execute("""
+        INSERT INTO teklifler (kod, musteri, konu, sorumlu, teklif_tarihi, durum, yaslanma_gun, satis_try, maliyet_try, kalemler)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(kod) DO UPDATE SET
+            musteri=excluded.musteri,
+            konu=excluded.konu,
+            sorumlu=excluded.sorumlu,
+            teklif_tarihi=excluded.teklif_tarihi,
+            durum=excluded.durum,
+            yaslanma_gun=excluded.yaslanma_gun,
+            satis_try=excluded.satis_try,
+            maliyet_try=excluded.maliyet_try,
+            kalemler=excluded.kalemler
+    """, (kod, musteri, konu, sorumlu, tarih, durum, yaslanma, satis_try, maliyet_try, kalemler_json))
+
+    conn.commit()
+    conn.close()

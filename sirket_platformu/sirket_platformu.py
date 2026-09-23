@@ -13,6 +13,8 @@ from .price_catalog_view import price_catalog_page
 from .quote_upload_view import quote_upload_page
 from .cost_upload_view import cost_upload_page
 from .supplier_compare_view import supplier_compare_page
+from .technical_scope_state import TechnicalScopeState
+from .supplier_compare_state import SupplierCompareState
 
 
 app = rx.App(
@@ -58,7 +60,6 @@ app.add_page(
     title="Teknik Kapsam Üreteci | PetroTek",
     on_load=QuoteState.set_active_module("Teknik Teklif & Kapsam Dosyası Üreteci"),
 )
-
 
 #Saha İşçilik & Montaj Sayfası
 app.add_page(
@@ -132,10 +133,13 @@ app.add_page(
 )
 
 
-#Tedarikçi Karşılaştır
+# Akıllı Tedarikçi Karşılaştırma Sayfası
 app.add_page(
     supplier_compare_page,
     route="/tedarikci-karsilastir",
     title="Akıllı Tedarikçi Karşılaştırma & Sepet Optimizasyonu | PetroTek",
-    on_load=QuoteState.set_active_module("Akıllı Tedarikçi Karşılaştırma & Sepet O..."),
+    on_load=[
+        QuoteState.set_active_module("Akıllı Tedarikçi Karşılaştırma & Sepet O..."),
+        SupplierCompareState.teklifleri_guncelle,  # <-- Veritabanından teklifleri yükler
+    ],
 )
