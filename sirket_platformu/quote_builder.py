@@ -37,6 +37,7 @@ MODULE_ROUTES = {
     "Fiyat Hafızası & Katalog": "/fiyat-hafizasi",
     "Teklif Yükle (PDF / Excel)": "/teklif-yukle",
     "Maliyet Yükle (PDF / Excel)": "/maliyet-yukle",  # <-- Eklendi
+    "Akıllı Tedarikçi Karşılaştırma & Sepet O...": "/tedarikci-karsilastir",
 }
 
 

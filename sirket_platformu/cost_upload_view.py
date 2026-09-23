@@ -11,6 +11,10 @@ def eslesen_kalem_satiri(item: Dict[str, Any]) -> rx.Component:
             rx.text(item["malzeme"].to(str), font_size="13px", font_weight="600", color="#ffffff")
         ),
         rx.table.cell(
+            rx.text(item["miktar"].to(str) + " " + item["birim"].to(str), font_size="12px", color="#cbd5e1"),
+            text_align="center",
+        ),
+        rx.table.cell(
             rx.text(
                 item["gelen_fiyat_str"].to(str),
                 font_size="13px",
@@ -31,8 +35,68 @@ def eslesen_kalem_satiri(item: Dict[str, Any]) -> rx.Component:
         _hover={"background": "rgba(255, 255, 255, 0.02)"},
     )
 
+def unmatch_item_row(item: Dict[str, Any]) -> rx.Component:
+    return rx.hstack(
+        rx.vstack(
+            rx.text(item["malzeme"].to(str), font_weight="600", color="#ffffff", font_size="13px"),
+            rx.text(item["gelen_fiyat_str"].to(str) + " " + item["pb"].to(str), color="#94a3b8", font_size="12px"),
+            align_items="start",
+            spacing="0",
+        ),
+        rx.spacer(),
+        rx.button(
+            "Teklife Ekle",
+            size="1",
+            color_scheme="blue",
+            on_click=lambda: CostUploadState.add_unmatched_to_list(item["malzeme"]),
+        ),
+        width="100%",
+        align_items="center",
+        padding_y="6px",
+        border_bottom="1px solid #1e293b",
+    )
+
 def cost_upload_main() -> rx.Component:
     return rx.box(
+        # Eşleşmeyen Kalemler İçin Soru / Onay Penceresi (Dialog)
+        rx.dialog.root(
+            rx.dialog.content(
+                rx.dialog.title("⚠️ Eşleşmeyen / Belirsiz Kalemler Tespit Edildi"),
+                rx.dialog.description(
+                    "Tedarikçi maliyet dosyasındaki aşağıdaki kalemler teklifte doğrudan bulunamadı. "
+                    "Bu kalemler teklife ilave mi edilsin, yoksa teklif alamadığınız/şartnameyi sağlamayan kalemler olarak elensin mi?",
+                    size="2",
+                    margin_bottom="16px",
+                ),
+                rx.vstack(
+                    rx.foreach(CostUploadState.eslesmeyen_kalemler, unmatch_item_row),
+                    spacing="2",
+                    width="100%",
+                    max_height="220px",
+                    overflow_y="auto",
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Tümünü Kapsam Dışı Bırak (Ele)",
+                        color_scheme="red",
+                        variant="surface",
+                        on_click=CostUploadState.skip_unmatched_items,
+                    ),
+                    rx.spacer(),
+                    rx.button(
+                        "Kapat",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=CostUploadState.close_dialog,
+                    ),
+                    margin_top="16px",
+                    width="100%",
+                ),
+                style={"max_width": "520px", "background": "#0b1120", "border": "1px solid #1e293b"},
+            ),
+            open=CostUploadState.show_clarification_dialog,
+        ),
+
         rx.vstack(
             # Üst Bar
             rx.hstack(
@@ -166,7 +230,7 @@ def cost_upload_main() -> rx.Component:
                         width="100%",
                     ),
 
-                    # Eşleşen Kalemler Alanı (Dosya yokken boş durum kutusu, dosya varken önizleme tablosu)
+                    # Eşleşen Kalemler Tablosu
                     rx.cond(
                         CostUploadState.has_matches,
                         rx.vstack(
@@ -194,7 +258,8 @@ def cost_upload_main() -> rx.Component:
                                         rx.table.header(
                                             rx.table.row(
                                                 rx.table.column_header_cell("TEKLİFTEKİ MALZEME"),
-                                                rx.table.column_header_cell("GELEN FİYAT", text_align="right"),
+                                                rx.table.column_header_cell("TEKLİF MİKTARI", text_align="center"),
+                                                rx.table.column_header_cell("GELEN BİRİM FİYAT", text_align="right"),
                                                 rx.table.column_header_cell("PB", text_align="center"),
                                                 rx.table.column_header_cell("TEDARİKÇİ FİRMA"),
                                             )
@@ -261,7 +326,7 @@ def cost_upload_main() -> rx.Component:
 
             rx.spacer(),
 
-            # Sağ Alttaki Bildirim Hapı (Notification Pill)
+            # Sağ Alttaki Bildirim Hapı
             rx.hstack(
                 rx.spacer(),
                 rx.card(

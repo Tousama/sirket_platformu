@@ -1,256 +1,426 @@
 import reflex as rx
-import os
-import re
 from typing import List, Dict, Any
 from io import BytesIO
+import re
 
+from datetime import datetime
+from .shared_quotes import register_quote
 from .dashboard_state import DashboardState
 from .revision_diff_state import VERSIONS_DB
 
-from .services.parsers import extract_excel_full_with_cost_sheets, extract_pdf_full
-from .services.tcmb import get_tcmb_kurlar
+try:
+    from .services.parsers import (
+        extract_pdf_full,
+        extract_excel_full_with_cost_sheets,
+        parse_sayi,
+    )
+except ImportError:
+    from services.parsers import (
+        extract_pdf_full,
+        extract_excel_full_with_cost_sheets,
+        parse_sayi,
+    )
+
+UPLOAD_ID = "quote_upload_input_id"
 
 
 class QuoteUploadState(rx.State):
-    has_file: bool = False
-    dosya_adi: str = ""
+    # Dosya durumu
+    dosya_adi: str = "Dosya seçilmedi"
+    dosya_yuklendi: bool = False
+
+    # Teklif Antet Bilgileri
     teklif_kodu: str = ""
     musteri: str = ""
+    musteri_iletisim: str = ""
     konu: str = ""
-    sorumlu: str = "Muhammed Güner"
-    
-    # TCMB kurları dinamik başlatılır
-    _kurlar = get_tcmb_kurlar()
-    kur_usd: float = _kurlar.get("USD", 48.7479)
-    kur_eur: float = _kurlar.get("EUR", 55.9390)
-    
-    toplam_val: float = 0.0
-    toplam_str: str = "0,00 ₺"
-    
-    maliyet_val: float = 0.0
-    maliyet_str: str = "0,00 ₺"
-    kar_marji_str: str = "%0.0"
+    teklif_tarihi: str = ""
+    muhendis: str = ""
 
-    # Kalem listesi
+    # Kurlar
+    kur_usd: float = 46.3293
+    kur_eur: float = 53.21
+
+    # Finansal Göstergeler
+    toplam_satis: float = 0.0
+    toplam_satis_str: str = "0,00 ₺"
+    toplam_maliyet: float = 0.0
+    toplam_maliyet_str: str = "0,00 ₺"
+    kar_marji_str: str = "%100.0 Marj"
+
+    # Tablo Kalemleri
     kalemler: List[Dict[str, Any]] = []
 
-    async def handle_upload(self, files: List[rx.UploadFile]):
-        """Yüklenen gerçek PDF veya Excel dosyasını parser ile okur."""
-        if not files:
-            return
+    @rx.var
+    def has_file(self) -> bool:
+        return self.dosya_yuklendi and len(self.kalemler) > 0
+
+    async def handle_quote_upload(self, files: List[rx.UploadFile]):
+        """Yüklenen PDF veya Excel dosyasını parsers.py motorunu kullanarak ayrıştırır."""
+        if not files or len(files) == 0:
+            return rx.toast.error("Lütfen önce bir dosya seçin!", position="top-right")
 
         file = files[0]
         self.dosya_adi = file.filename
-        upload_data = await file.read()
-        file_stream = BytesIO(upload_data)
-        file_stream.name = file.filename
+        content = await file.read()
+        if not content:
+            return rx.toast.error("Dosya içeriği boş veya okunamadı.", position="top-right")
 
-        fn_lower = file.filename.lower()
-        sonuc = {}
+        file_stream = BytesIO(content)
+        # parsers.py dosya adından regex ile PT kodunu yakalayabilsin diye name özniteliği set edilir
+        setattr(file_stream, "name", file.filename)
+
+        fn_low = file.filename.lower()
+        parsed_result = None
 
         try:
-            if fn_lower.endswith((".xlsx", ".xls")):
-                sonuc = extract_excel_full_with_cost_sheets(file_stream, self.kur_usd, self.kur_eur)
-            elif fn_lower.endswith(".pdf"):
-                sonuc = extract_pdf_full(file_stream)
-        except Exception as e:
-            return rx.toast.error(f"Dosya ayrıştırılırken hata oluştu: {str(e)}", position="top-right")
+            # 1. PDF Ayrıştırma
+            if fn_low.endswith(".pdf"):
+                parsed_result = extract_pdf_full(file_stream)
 
-        # Üst bilgileri aktar
-        ham_ad = os.path.splitext(file.filename)[0]
-        dosya_adi_konu = re.sub(r"^(?:PT)?\d+[\-_]?", "", ham_ad, flags=re.IGNORECASE).replace("-", " ").replace("_", " ").strip()
-        
-        self.teklif_kodu = str(sonuc.get("teklif_kodu") or "").strip()
-        if not self.teklif_kodu:
-            m_pt = re.search(r"PT\d+", ham_ad, re.IGNORECASE)
-            self.teklif_kodu = m_pt.group(0).upper() if m_pt else "PT2026092301"
+            # 2. Excel Ayrıştırma
+            elif fn_low.endswith((".xlsx", ".xls")):
+                parsed_result = extract_excel_full_with_cost_sheets(file_stream)
 
-        # Müşteri tespiti
-        mus = str(sonuc.get("musteri") or "").strip()
-        if not mus or mus == "-":
-            ham_upper = ham_ad.upper()
-            if "SHELL" in ham_upper:
-                mus = "SHELL & TURCAS PETROL A.Ş. - DERİNCE" if "DERİNCE" in ham_upper or "DERINCE" in ham_upper else "SHELL & TURCAS PETROL A.Ş."
-            elif "OMC" in ham_upper:
-                mus = "OMC Sıvı Depolama Terminali"
-            elif "AVES" in ham_upper:
-                mus = "AVES ENERJİ YAĞ VE GIDA SANAYİ A.Ş."
-            elif "TÜPRAŞ" in ham_upper or "TUPRAS" in ham_upper:
-                mus = "TÜRKİYE PETROL RAFİNERİLERİ A.Ş."
             else:
-                mus = "PetroTek Müşterisi"
-        self.musteri = mus
+                return rx.toast.error("Yalnızca .pdf ve .xlsx formatları desteklenmektedir.", position="top-right")
 
-        self.konu = str(sonuc.get("konu") or "").strip() or dosya_adi_konu
-        self.sorumlu = str(sonuc.get("muhendis") or "").strip() or "Muhammed Güner"
+            if not parsed_result:
+                return rx.toast.error("Dosya ayrıştırılamadı.", position="top-right")
 
-        # Kalemleri al
-        parsed_kalemler = sonuc.get("kalemler", [])
-        self.kalemler = []
-        for idx, k in enumerate(parsed_kalemler):
+            # parsers.py'den gelen antet ve kur verilerini ata
+            self.teklif_kodu = parsed_result.get("teklif_kodu") or re.search(r"PT\d+", file.filename, re.I).group(0)
+            self.musteri = parsed_result.get("musteri") or "Müşteri Firması"
+            self.musteri_iletisim = parsed_result.get("musteri_iletisim") or ""
+            self.konu = parsed_result.get("konu") or "Endüstriyel Ekipman ve Saha Hizmeti"
+            self.teklif_tarihi = parsed_result.get("teklif_tarihi") or "23.09.2026"
+            self.muhendis = parsed_result.get("muhendis") or "Muhammed GÜNER"
+            self.kur_usd = float(parsed_result.get("kur_usd", 46.3293))
+            self.kur_eur = float(parsed_result.get("kur_eur", 53.21))
+
+            raw_kalemler = parsed_result.get("kalemler", [])
+            toplam_satis_tl = float(parsed_result.get("toplam_tutar", 0.0))
+
+            # Arayüz tablosu için formatlanmış kalemler listesi
+            formatted_kalemler = []
+            toplam_maliyet_tl = 0.0
+
+            for k in raw_kalemler:
+                mik = float(k.get("miktar", 1.0))
+                birim = str(k.get("birim", "Adet"))
+                b_fiyat = float(k.get("birim_satis") or k.get("birim_fiyat") or 0.0)
+                tutar = float(k.get("toplam_tl") or k.get("toplam") or (mik * b_fiyat))
+                pb = str(k.get("para_birimi", "TRY"))
+                b_maliyet = float(k.get("birim_maliyet", 0.0))
+                m_pb = str(k.get("maliyet_pb", "TRY"))
+
+                # Maliyet hesabı
+                if b_maliyet > 0:
+                    rate = self.kur_eur if m_pb == "EUR" else (self.kur_usd if m_pb == "USD" else 1.0)
+                    toplam_maliyet_tl += (mik * b_maliyet * rate)
+
+                formatted_kalemler.append({
+                    "malzeme_adi": k.get("malzeme_adi", "Tanımsız Malzeme"),
+                    "miktar": mik,
+                    "miktar_str": f"{int(mik) if mik.is_integer() else mik} {birim}",
+                    "birim": birim,
+                    "birim_fiyat": b_fiyat,
+                    "birim_fiyat_str": f"{b_fiyat:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
+                    "tutar_tl": tutar,
+                    "tutar_tl_str": f"{tutar:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
+                    "para_birimi": pb,
+                })
+
+            # Eğer parsers.py dip toplamı 0 hesaplamışsa kalemlerden topla
+            if toplam_satis_tl <= 0 and formatted_kalemler:
+                toplam_satis_tl = sum(k["tutar_tl"] for k in formatted_kalemler)
+
+            self.kalemler = formatted_kalemler
+            self.toplam_satis = round(toplam_satis_tl, 2)
+            self.toplam_satis_str = f"{self.toplam_satis:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.toplam_maliyet = round(toplam_maliyet_tl, 2)
+            self.toplam_maliyet_str = f"{self.toplam_maliyet:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            # Marj hesabı
+            if self.toplam_satis > 0 and self.toplam_maliyet > 0:
+                marj = ((self.toplam_satis - self.toplam_maliyet) / self.toplam_satis) * 100
+                self.kar_marji_str = f"%{marj:.1f} Marj"
+            else:
+                self.kar_marji_str = "%100.0 Marj"
+
+            self.dosya_yuklendi = True
+
+            if formatted_kalemler:
+                return rx.toast.success(
+                    f"'{file.filename}' başarıyla ayrıştırıldı: {len(formatted_kalemler)} kalem listelendi!",
+                    position="top-right"
+                )
+            else:
+                return rx.toast.warning(
+                    f"'{file.filename}' okundu ancak kalem tablosu tespit edilemedi.",
+                    position="top-right"
+                )
+
+        except Exception as err:
+            return rx.toast.error(f"Ayrıştırma hatası: {str(err)}", position="top-right")
+
+
+    async def teklifi_portala_kaydet(self):
+        """Ayrıştırılan teklifi hem sisteme hem de paylaşılan ortak teklif havuzuna kaydeder."""
+        if not self.kalemler or not self.teklif_kodu:
+            return rx.toast.error("Kaydedilecek geçerli bir teklif bulunamadı.", position="top-right")
+
+        sorumlu_kisi = self.muhendis or "Mustafa GÜRBÜZ"
+
+        # -------------------------------------------------------------
+        # 1. Yaşlanma Günü (yaslanma_gun) Hesabı
+        # -------------------------------------------------------------
+        yaslanma_gun = 0
+        try:
+            t_str = self.teklif_tarihi.strip()
+            t_obj = None
+            for fmt in ("%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                try:
+                    t_obj = datetime.strptime(t_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            if t_obj:
+                bugun = datetime.now()
+                fark = (bugun - t_obj).days
+                yaslanma_gun = max(0, fark)
+            else:
+                yaslanma_gun = 12
+        except Exception:
+            yaslanma_gun = 0
+
+        # -------------------------------------------------------------
+        # 2. Akıllı Tedarikçi ve Diğer Modüller İçin Evrensel Kalem Listesi
+        # -------------------------------------------------------------
+        evrensel_kalemler = []
+        for k in self.kalemler:
+            ad = k.get("malzeme_adi") or k.get("tanim") or k.get("malzeme") or "Tanımsız Kalem"
             mik = float(k.get("miktar", 1.0))
-            b_sat = float(k.get("birim_satis", 0.0) or k.get("birim_fiyat", 0.0))
-            b_mal = float(k.get("birim_maliyet", 0.0))
-            pb = str(k.get("para_birimi", "TRY")).upper()
-            
-            toplam_sat = round(mik * b_sat, 2)
-            self.kalemler.append({
-                "id": idx + 1,
-                "malzeme_adi": k.get("malzeme_adi", f"Kalem {idx+1}"),
+            birim = str(k.get("birim", "Adet"))
+            b_fiyat = float(k.get("birim_fiyat") or k.get("birim_satis") or 0.0)
+            tutar = float(k.get("tutar_tl") or k.get("toplam_tl") or k.get("toplam") or (mik * b_fiyat))
+            pb = str(k.get("para_birimi", "TRY"))
+
+            evrensel_kalemler.append({
+                # Her iki modülün beklediği tüm varyasyonlar:
+                "malzeme_adi": ad,
+                "malzeme": ad,
+                "tanim": ad,
+                "aciklama": ad,
                 "miktar": mik,
-                "birim": k.get("birim", "Adet"),
-                "birim_satis": b_sat,
-                "birim_satis_str": f"{b_sat:,.2f}",
-                "birim_maliyet": b_mal,
-                "birim_maliyet_str": str(b_mal) if b_mal > 0 else "0.0",
-                "toplam_satis": toplam_sat,
-                "toplam_satis_str": f"{toplam_sat:,.2f}",
+                "miktar_str": f"{int(mik) if mik.is_integer() else mik} {birim}",
+                "birim": birim,
+                "birim_fiyat": b_fiyat,
+                "birim_satis": b_fiyat,
+                "fiyat": b_fiyat,
+                "birim_fiyat_str": f"{b_fiyat:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
+                "tutar_tl": tutar,
+                "toplam": tutar,
+                "toplam_tl": tutar,
+                "tutar_tl_str": f"{tutar:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
                 "para_birimi": pb,
             })
 
-        self.has_file = True
-        self._recalculate_totals()
-
-        return rx.toast.success(
-            f"'{file.filename}' başarıyla okundu! {len(self.kalemler)} kalem tespit edildi.",
-            position="top-right"
-        )
-
-    def update_item_maliyet(self, item_id: int, val: str):
-        """Kullanıcı tablodan kalemin birim maliyetini güncellediğinde çalışır."""
+        # -------------------------------------------------------------
+        # 3. Ortak Teklif Havuzuna Kaydet
+        # -------------------------------------------------------------
+        # 1. SQLite ve Ortak Havuza Kaydet
         try:
-            clean = val.replace("₺", "").replace(" ", "").replace(",", ".")
-            new_cost = float(clean) if clean else 0.0
-        except ValueError:
-            new_cost = 0.0
-
-        for k in self.kalemler:
-            if k["id"] == item_id:
-                k["birim_maliyet"] = new_cost
-                k["birim_maliyet_str"] = val
-                break
-
-        self._recalculate_totals()
-
-    def _recalculate_totals(self):
-        tot_sale = 0.0
-        tot_cost = 0.0
-
-        for k in self.kalemler:
-            pb = k["para_birimi"]
-            rate = self.kur_eur if pb == "EUR" else (self.kur_usd if pb == "USD" else 1.0)
-            mik = float(k["miktar"])
-            
-            tot_sale += (mik * float(k["birim_satis"]) * rate)
-            tot_cost += (mik * float(k["birim_maliyet"]) * rate)
-
-        self.toplam_val = round(tot_sale, 2)
-        self.maliyet_val = round(tot_cost, 2)
-        self.toplam_str = f"{self.toplam_val:,.2f} ₺"
-        self.maliyet_str = f"{self.maliyet_val:,.2f} ₺"
-
-        marj = ((tot_sale - tot_cost) / tot_sale * 100) if tot_sale > 0 else 0.0
-        self.kar_marji_str = f"%{marj:.1f}"
-
-    def simule_et(self):
-        """Görseldeki Shell Derince örneğini birebir simüle eder."""
-        self.dosya_adi = "SHELL DERİNCE SCULLY TEMİNİ VE DEĞİŞİMİ.xlsx"
-        self.teklif_kodu = "PT202609201558"
-        self.musteri = "SHELL & TURCAS PETROL A.Ş. - DERİNCE"
-        self.konu = "SHELL DERİNCE SCULLY TEMİNİ VE DEĞİŞİMİ"
-        self.sorumlu = "Muhammed Güner"
-
-        self.kalemler = [
-            {
-                "id": 1,
-                "malzeme_adi": "Scully Optik Sıvı Taşma Sensörü & Soket Seti",
-                "miktar": 4.0,
-                "birim": "Adet",
-                "birim_satis": 28500.00,
-                "birim_satis_str": "28,500.00",
-                "birim_maliyet": 19200.00,
-                "birim_maliyet_str": "19200.00",
-                "toplam_satis": 114000.00,
-                "toplam_satis_str": "114,000.00",
-                "para_birimi": "TRY",
-            },
-            {
-                "id": 2,
-                "malzeme_adi": "Scully Topraklama Pensi ve Spiral Kablo (Ex-Proof)",
-                "miktar": 2.0,
-                "birim": "Set",
-                "birim_satis": 22500.00,
-                "birim_satis_str": "22,500.00",
-                "birim_maliyet": 14500.00,
-                "birim_maliyet_str": "14500.00",
-                "toplam_satis": 45000.00,
-                "toplam_satis_str": "45,000.00",
-                "para_birimi": "TRY",
-            },
-            {
-                "id": 3,
-                "malzeme_adi": "Saha Demontaj, Montaj, Test ve Devreye Alma Hizmeti",
-                "miktar": 1.0,
-                "birim": "Hizmet",
-                "birim_satis": 86000.00,
-                "birim_satis_str": "86,000.00",
-                "birim_maliyet": 42000.00,
-                "birim_maliyet_str": "42000.00",
-                "toplam_satis": 86000.00,
-                "toplam_satis_str": "86,000.00",
-                "para_birimi": "TRY",
-            },
-        ]
-        self.has_file = True
-        self._recalculate_totals()
-
-        return rx.toast.info("Shell Derince Scully teklifi ve kalemleri yüklendi.", position="top-right")
-
-    async def portala_kaydet(self):
-        """Tüm kalemleri ve hesaplanan maliyetleri Dashboard ve VERSIONS_DB'ye işler."""
-        if not self.teklif_kodu or not self.musteri:
-            return rx.toast.error("Teklif kodu veya müşteri adı eksik!", position="top-right")
-
-        marj = round(((self.toplam_val - self.maliyet_val) / self.toplam_val * 100), 1) if self.toplam_val > 0 else 0.0
-
-        yeni_kayit = {
-            "kod": self.teklif_kodu,
-            "musteri": self.musteri,
-            "konu": self.konu,
-            "sorumlu": self.sorumlu,
-            "durum": "Hazırlanıyor",
-            "maliyet_try": self.maliyet_val,
-            "satis_try": self.toplam_val,
-            "marj": marj,
-            "tarih": "2026-09-23",
-            "yaslanma_gun": 0,
-            "para_birimi": "TRY",
-        }
-
-        dash_state = await self.get_state(DashboardState)
-        if hasattr(dash_state, "raw_quotes"):
-            dash_state.raw_quotes.insert(0, yeni_kayit)
-
-        # Kalemleri VERSIONS_DB formatında hazırla
-        db_items = {}
-        for k in self.kalemler:
-            db_items[k["malzeme_adi"]] = {
-                "miktar": float(k["miktar"]),
-                "birim": k["birim"],
-                "birim_maliyet": float(k["birim_maliyet"]),
-                "birim_satis": float(k["birim_satis"]),
+            extra_bilgi = {
+                "konu": self.konu,
+                "teklif_tarihi": self.teklif_tarihi,
+                "sorumlu": sorumlu_kisi,
+                "durum": "Müşteride",
+                "yaslanma_gun": yaslanma_gun,
+                "satis_try": self.toplam_satis,
+                "maliyet_try": self.toplam_maliyet,
             }
+            register_quote(
+                kod=self.teklif_kodu,
+                baslik=f"{self.teklif_kodu} - {self.musteri}",
+                kalemler=evrensel_kalemler,
+                musteri=self.musteri,
+                extra_data=extra_bilgi
+            )
+        except Exception:
+            pass
+        
 
-        VERSIONS_DB[f"{self.teklif_kodu} (Rev 0 - Orijinal)"] = {
+        # -------------------------------------------------------------
+        # 4. VERSIONS_DB Kaydı
+        # -------------------------------------------------------------
+        VERSIONS_DB[self.teklif_kodu] = {
+            "items": {
+                k["malzeme_adi"]: {
+                    "miktar": k["miktar"],
+                    "birim": k["birim"],
+                    "fiyat": k["birim_fiyat"],
+                    "tutar": k["tutar_tl"],
+                }
+                for k in evrensel_kalemler
+            },
+            "toplam": self.toplam_satis,
             "musteri": self.musteri,
-            "konu": self.konu,
-            "sorumlu": self.sorumlu,
-            "maliyet": self.maliyet_val,
-            "satis": self.toplam_val,
-            "items": db_items,
+            "tarih": self.teklif_tarihi,
+            "sorumlu": sorumlu_kisi,
+            "muhendis": sorumlu_kisi,
+            "yaslanma_gun": yaslanma_gun,
         }
+
+        # -------------------------------------------------------------
+        # 5. DashboardState Canlı Listesini Güncelle
+        # -------------------------------------------------------------
+        try:
+            dash_state = await self.get_state(DashboardState)
+            if hasattr(dash_state, "raw_quotes"):
+                marj_val = 100.0 if self.toplam_maliyet == 0 else round(((self.toplam_satis - self.toplam_maliyet) / self.toplam_satis) * 100, 1)
+
+                yeni_teklif_obj = {
+                    "kod": self.teklif_kodu,
+                    "teklif_kodu": self.teklif_kodu,
+                    "musteri": self.musteri,
+                    "konu": self.konu,
+                    "tarih": self.teklif_tarihi,
+                    "sorumlu": sorumlu_kisi,
+                    "muhendis": sorumlu_kisi,
+                    "sorumlu_muhendis": sorumlu_kisi,
+                    "satis_try": self.toplam_satis,
+                    "maliyet_try": self.toplam_maliyet,
+                    "marj": marj_val,
+                    "kar_marji": marj_val,
+                    "durum": "Müşteride",
+                    "yaslanma_gun": yaslanma_gun,
+                    "kalemler": evrensel_kalemler,
+                }
+
+                mevcut_idx = -1
+                for i, q in enumerate(dash_state.raw_quotes):
+                    if q.get("kod") == self.teklif_kodu or q.get("teklif_kodu") == self.teklif_kodu:
+                        mevcut_idx = i
+                        break
+
+                if mevcut_idx != -1:
+                    dash_state.raw_quotes[mevcut_idx] = yeni_teklif_obj
+                else:
+                    dash_state.raw_quotes.insert(0, yeni_teklif_obj)
+
+        except Exception as err:
+            return rx.toast.error(f"Portala kayıt sırasında hata: {str(err)}", position="top-right")
 
         return rx.toast.success(
-            f"'{self.teklif_kodu}' teklifi {len(self.kalemler)} kalemiyle birlikte portala kaydedildi!",
-            position="top-right"
+            f"'{self.teklif_kodu}' teklifi portala ve karşılaştırma havuzuna başarıyla kaydedildi!",
+            position="top-right",
+        )
+        """Ayrıştırılan teklifi hem sisteme hem de paylaşılan ortak teklif havuzuna kaydeder."""
+        if not self.kalemler or not self.teklif_kodu:
+            return rx.toast.error("Kaydedilecek geçerli bir teklif bulunamadı.", position="top-right")
+
+        sorumlu_kisi = self.muhendis or "Mustafa GÜRBÜZ"
+
+        # -------------------------------------------------------------
+        # 1. Yaşlanma Günü (yaslanma_gun) Hesabı
+        # -------------------------------------------------------------
+        yaslanma_gun = 0
+        try:
+            # Tarih formatlarını dene (7.01.2026, 07.01.2026, 2026-01-07 vb.)
+            t_str = self.teklif_tarihi.strip()
+            t_obj = None
+            for fmt in ("%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                try:
+                    t_obj = datetime.strptime(t_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            if t_obj:
+                bugun = datetime.now()
+                fark = (bugun - t_obj).days
+                yaslanma_gun = max(0, fark)
+            else:
+                yaslanma_gun = 12
+        except Exception:
+            yaslanma_gun = 0
+
+        # -------------------------------------------------------------
+        # 2. Ortak Teklif Havuzuna Kaydet
+        # -------------------------------------------------------------
+        try:
+            register_quote(
+                kod=self.teklif_kodu,
+                baslik=f"{self.teklif_kodu} - {self.musteri}",
+                kalemler=self.kalemler,
+                musteri=self.musteri,
+            )
+        except Exception:
+            pass
+
+        # -------------------------------------------------------------
+        # 3. VERSIONS_DB Kaydı
+        # -------------------------------------------------------------
+        VERSIONS_DB[self.teklif_kodu] = {
+            "items": {
+                k["malzeme_adi"]: {
+                    "miktar": k["miktar"],
+                    "birim": k["birim"],
+                    "fiyat": k["birim_fiyat"],
+                    "tutar": k["tutar_tl"],
+                }
+                for k in self.kalemler
+            },
+            "toplam": self.toplam_satis,
+            "musteri": self.musteri,
+            "tarih": self.teklif_tarihi,
+            "sorumlu": sorumlu_kisi,
+            "muhendis": sorumlu_kisi,
+            "yaslanma_gun": yaslanma_gun,
+        }
+
+        # -------------------------------------------------------------
+        # 4. DashboardState Listesine Eksiksiz Şema ile Kaydet
+        # -------------------------------------------------------------
+        try:
+            dash_state = await self.get_state(DashboardState)
+            if hasattr(dash_state, "raw_quotes"):
+                marj_val = 100.0 if self.toplam_maliyet == 0 else round(((self.toplam_satis - self.toplam_maliyet) / self.toplam_satis) * 100, 1)
+
+                yeni_teklif_obj = {
+                    "kod": self.teklif_kodu,
+                    "teklif_kodu": self.teklif_kodu,
+                    "musteri": self.musteri,
+                    "konu": self.konu,
+                    "tarih": self.teklif_tarihi,
+                    "sorumlu": sorumlu_kisi,
+                    "muhendis": sorumlu_kisi,
+                    "sorumlu_muhendis": sorumlu_kisi,
+                    "satis_try": self.toplam_satis,
+                    "maliyet_try": self.toplam_maliyet,
+                    "marj": marj_val,
+                    "kar_marji": marj_val,
+                    "durum": "Müşteride",                    # <-- "Teklif Verildi" yerine "Müşteride" yapıldı
+                    "yaslanma_gun": yaslanma_gun,
+                    "kalemler": self.kalemler,
+                }
+
+                # Mevcut teklif varsa güncelle, yoksa en başa ekle
+                mevcut_idx = -1
+                for i, q in enumerate(dash_state.raw_quotes):
+                    if q.get("kod") == self.teklif_kodu or q.get("teklif_kodu") == self.teklif_kodu:
+                        mevcut_idx = i
+                        break
+
+                if mevcut_idx != -1:
+                    dash_state.raw_quotes[mevcut_idx] = yeni_teklif_obj
+                else:
+                    dash_state.raw_quotes.insert(0, yeni_teklif_obj)
+
+        except Exception as err:
+            return rx.toast.error(f"Portala kayıt sırasında hata: {str(err)}", position="top-right")
+
+        return rx.toast.success(
+            f"'{self.teklif_kodu}' teklifi portala ve karşılaştırma havuzuna başarıyla kaydedildi!",
+            position="top-right",
         )

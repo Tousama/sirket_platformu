@@ -435,4 +435,5 @@ def dashboard_page() -> rx.Component:
         width="100%",
         height="100vh",
         overflow="hidden",
+        on_mount=DashboardState.load_quotes
     )

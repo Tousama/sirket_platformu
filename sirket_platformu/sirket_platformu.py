@@ -12,6 +12,7 @@ from .margin_simulator_view import margin_simulator_page
 from .price_catalog_view import price_catalog_page
 from .quote_upload_view import quote_upload_page
 from .cost_upload_view import cost_upload_page
+from .supplier_compare_view import supplier_compare_page
 
 
 app = rx.App(
@@ -128,4 +129,13 @@ app.add_page(
     route="/maliyet-yukle",
     title="Maliyet Yükle (PDF / Excel) | PetroTek",
     on_load=QuoteState.set_active_module("Maliyet Yükle (PDF / Excel)"),
+)
+
+
+#Tedarikçi Karşılaştır
+app.add_page(
+    supplier_compare_page,
+    route="/tedarikci-karsilastir",
+    title="Akıllı Tedarikçi Karşılaştırma & Sepet Optimizasyonu | PetroTek",
+    on_load=QuoteState.set_active_module("Akıllı Tedarikçi Karşılaştırma & Sepet O..."),
 )

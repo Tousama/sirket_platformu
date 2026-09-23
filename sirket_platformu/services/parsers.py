@@ -37,8 +37,8 @@ def extract_pdf_full(pdf_file):
         "teklif_tarihi": "",
         "muhendis": "",
         "konu": "",
-        "kur_usd": 46.3293,
-        "kur_eur": 53.21,
+        "kur_usd": 43.64,
+        "kur_eur": 51.84,
         "toplam_tutar": 0.0,
         "para_birimi": "TRY",
         "kalemler": [],
@@ -47,206 +47,222 @@ def extract_pdf_full(pdf_file):
 
     try:
         kalemler = []
-        toplam_tutar = 0.0
         teklif_kodu = ""
         musteri_adi = ""
         musteri_iletisim = ""
         teklif_tarihi = ""
         muhendis_adi = ""
         konu_adi = ""
-        raw_tables = []
+        toplam_tutar = 0.0
 
-        # 1. Dosya adından teklif kodunu ve konuyu yakala
+        # 1. Dosya adından teklif kodunu yakala
         dosya_adi = getattr(pdf_file, "name", "")
         if dosya_adi:
             fn_match = re.search(r"PT\d+", dosya_adi, re.IGNORECASE)
             if fn_match:
                 teklif_kodu = fn_match.group(0).upper()
 
-        # 2. PDF sayfalarını ve tabloları oku
+        raw_pages_text = []
+        raw_extracted_tables = []
+
         with pdfplumber.open(pdf_file) as pdf:
-            metin_parcalari = []
             for page in pdf.pages:
-                txt = page.extract_text(layout=False)
+                txt = page.extract_text(layout=False) or ""
                 if txt:
-                    metin_parcalari.append(txt)
-                tables = page.extract_tables()
-                if tables:
-                    raw_tables.extend(tables)
-            tam_metin = "\n".join(metin_parcalari)
-
-        # 3. Kurları Oku (Örn: USD: 46,3293 / EURO: 53,21)
-        kur_usd = 46.3293
-        kur_eur = 53.21
-        m_kur = re.search(r"USD\s*:\s*([0-9\.,]+).*?EUR(?:O)?\s*:\s*([0-9\.,]+)", tam_metin, re.IGNORECASE)
-        if m_kur:
-            usd_s = m_kur.group(1).replace(".", "").replace(",", ".") if "," in m_kur.group(1) else m_kur.group(1)
-            eur_s = m_kur.group(2).replace(".", "").replace(",", ".") if "," in m_kur.group(2) else m_kur.group(2)
-            kur_usd = parse_sayi(usd_s) or kur_usd
-            kur_eur = parse_sayi(eur_s) or kur_eur
-
-        # 4. Teklif Kodu
-        if not teklif_kodu and tam_metin:
-            pt_match = re.search(r"PT\s*[-_:/]?\s*(\d{6,14})|PT\d+", tam_metin, re.IGNORECASE)
-            if pt_match:
-                teklif_kodu = (pt_match.group(0) or "").replace(" ", "").replace("-", "").upper()
-
-        # 5. Müşteri
-        mus_match = re.search(r"(?:Sayın|Sayin|Sn\.|Müşteri|Firma|Tesis|Teklif Talep Eden Kişi/Firma)\s*[:\s]*([^\n\r]+)", tam_metin, re.IGNORECASE)
-        if mus_match:
-            m_ad = mus_match.group(1).strip()
-            m_ad = re.sub(r"(Yetkili|Tarih|Teklif No|Konu|Teklif Talep Eden).*", "", m_ad, flags=re.IGNORECASE).strip()
-            if len(m_ad) > 2:
-                musteri_adi = m_ad
-
-        # 6. Konu
-        konu_match = re.search(r"(?:Teklifin Konusu|Konu)\s*[:\s]*([^\n\r]+)", tam_metin, re.IGNORECASE)
-        if konu_match:
-            konu_adi = konu_match.group(1).strip()
-
-        # 7. Mühendis
-        muh_match = re.search(r"(?:Teklifi\s+Hazırlayan|Hazırlayan|Sorumlu\s+Mühendis)\s*[:\s]*([^\n\r]+)", tam_metin, re.IGNORECASE)
-        if muh_match:
-            m_satir = muh_match.group(1).strip()
-            m_satir = re.sub(r"(Teklif\s*Tarihi|İletişim|Mail|Tel|Konu|Teklif\s*No).*", "", m_satir, flags=re.IGNORECASE).strip()
-            if len(m_satir) > 3:
-                muhendis_adi = m_satir
-
-        # 8. Kesin Dip Teklif Toplamı (Görsel 2'deki "Teklif Toplamı ₺: 882.641,86 ₺")
-        toplam_regex = re.search(r"Teklif\s+Toplam[ıi]\s*(?:₺|TL)?\s*[:\s]*([0-9\.,]+)", tam_metin, re.IGNORECASE)
-        if toplam_regex:
-            toplam_tutar = parse_sayi(toplam_regex.group(1))
-
-        # 9. PetroTek Tablo Formatını Sütun Başlıklarına Göre Ayrıştır
-        for tbl in raw_tables:
-            if not tbl:
-                continue
-
-            # Başlık satırını bulup sütun indekslerini dinamik belirleyelim
-            col_fiyat_idx = -1
-            col_toplam_idx = -1
-            col_doviz_toplam_idx = -1
-            header_found = False
-
-            for row_idx, row in enumerate(tbl):
-                row_str = " ".join([str(c).replace("\n", " ").strip() for c in row if c]).lower()
+                    raw_pages_text.append(txt)
                 
-                # Tablo Başlık Satırı Kontrolü
-                if "açıklama" in row_str and ("fiyat" in row_str or "miktar" in row_str):
-                    header_found = True
-                    headers = [str(c).replace("\n", " ").strip().lower() if c else "" for c in row]
-                    for idx, h in enumerate(headers):
-                        if h == "fiyat" or ("birim fiyat" in h and "toplam" not in h):
-                            col_fiyat_idx = idx
-                        elif "döviz toplam" in h:
-                            col_doviz_toplam_idx = idx
-                        elif "toplam fiyat" in h or h == "toplam":
-                            col_toplam_idx = idx
+                # Tabloları hücre çizgilerine göre çıkar
+                tables = page.extract_tables({
+                    "vertical_strategy": "lines",
+                    "horizontal_strategy": "lines",
+                    "snap_tolerance": 3,
+                    "join_tolerance": 3,
+                })
+                # Eğer tam çizgili tablo gelmezse text tabanlı dene
+                if not tables:
+                    tables = page.extract_tables()
+                
+                for t in tables:
+                    if t:
+                        raw_extracted_tables.append(t)
+
+        tam_metin = "\n".join(raw_pages_text)
+
+        # 2. Antet Bilgilerini Oku
+        for l in tam_metin.split("\n"):
+            l_strip = l.strip()
+            if any(k in l_strip.lower() for k in ["teklif talep eden kişi", "kişi/firma", "sayın", "müşteri"]):
+                m = re.search(r":\s*([^\n\r]+)", l_strip)
+                if m and not musteri_adi:
+                    musteri_adi = m.group(1).strip()
+            elif any(k in l_strip.lower() for k in ["iletişim", "mail"]) and "@" in l_strip:
+                m_mail = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", l_strip)
+                if m_mail and not musteri_iletisim:
+                    musteri_iletisim = m_mail.group(0).strip()
+            elif any(k in l_strip.lower() for k in ["konusu", "konu"]) and not konu_adi:
+                m = re.search(r":\s*([^\n\r]+)", l_strip)
+                if m: konu_adi = m.group(1).strip()
+            elif any(k in l_strip.lower() for k in ["tarihi", "tarih"]) and not teklif_tarihi:
+                m = re.search(r"\d{1,2}[\./]\d{1,2}[\./]\d{4}", l_strip)
+                if m: teklif_tarihi = m.group(0).strip()
+            elif any(k in l_strip.lower() for k in ["hazırlayan", "sorumlu mühendis"]) and not muhendis_adi:
+                m = re.search(r":\s*([^\n\r]+)", l_strip)
+                if m and "iletişim" not in m.group(1).lower():
+                    muhendis_adi = m.group(1).strip()
+
+        if not teklif_kodu:
+            pt_m = re.search(r"PT\d+", tam_metin, re.IGNORECASE)
+            if pt_m:
+                teklif_kodu = pt_m.group(0).upper()
+
+        # 3. Kurları Oku
+        kur_usd = 43.64
+        kur_eur = 51.84
+        m_kur = re.search(r"USD\s*[:\s/]*([0-9\.,]+).*?EUR(?:O)?\s*[:\s/]*([0-9\.,]+)", tam_metin, re.IGNORECASE)
+        if m_kur:
+            kur_usd = parse_sayi(m_kur.group(1)) or kur_usd
+            kur_eur = parse_sayi(m_kur.group(2)) or kur_eur
+
+        # 4. Tablo Kalemlerini Hücre Hücre Ayrıştır
+        current_parent_group = ""
+
+        for tbl in raw_extracted_tables:
+            header_idx = -1
+            # Başlık satırını bul
+            for idx, row in enumerate(tbl):
+                row_str = " ".join([str(c).replace("\n", " ").strip() for c in row if c]).lower()
+                if ("açıklama" in row_str or "aciklama" in row_str or "malzeme" in row_str) and any(f in row_str for f in ["fiyat", "miktar", "tutar"]):
+                    header_idx = idx
+                    break
+
+            start_r = header_idx + 1 if header_idx != -1 else 0
+
+            for r in tbl[start_r:]:
+                if not r or not any(r):
                     continue
 
-                if not header_found or not row:
+                clean_cells = [str(c).replace("\n", " ").strip() if c is not None else "" for c in r]
+                row_line = " ".join(clean_cells).lower()
+
+                # DİP TOPLAM ve ALT BİLGİ SATIRLARINI KES
+                if any(x in row_line for x in [
+                    "güncel kur", "döviz toplam", "tl toplam", "teklif toplamı", 
+                    "malzeme €", "malzeme $", "malzeme tl", "işçilik toplamı",
+                    "kdv dahil", "opsiyon", "ödeme", "teslim süresi", "notlar"
+                ]):
+                    current_parent_group = ""
                     continue
 
-                r_cells = [str(c).replace("\n", " ").strip() if c is not None else "" for c in row]
-                row_str = " ".join(r_cells).lower()
-
-                # Alt özet satırlarını atla
-                if any(x in row_str for x in ["güncel kur", "döviz toplam", "tl toplam", "teklif toplamı", "kdv dahil", "opsiyon", "ödeme"]):
+                # Sütunları standartlaştır (PetroTek PDF Tablosu Genelde 10 sütunludur)
+                # POS [0] | Açıklama [1] | SHELL Birim Fiyat Tarifi [2] | Miktar [3] | Birim [4] | ... | Toplam Fiyat TL [-1]
+                if len(clean_cells) < 4:
                     continue
 
-                try:
-                    # Hücreleri listele
-                    valid_cells = [c for c in r_cells if c != ""]
-                    if len(valid_cells) < 4:
-                        continue
+                pos_val = clean_cells[0]
+                aciklama_val = clean_cells[1]
+                tarif_val = clean_cells[2] if len(clean_cells) > 2 else ""
 
-                    # 1. TOPLAM SATIŞ (TL) -> En son sütun
-                    toplam_tl_str = r_cells[col_toplam_idx] if col_toplam_idx != -1 else valid_cells[-1]
-                    satir_toplam_tl = parse_sayi(toplam_tl_str.replace("₺", "").replace("TL", ""))
+                # Boş Satır Kontrolü (42, 43, 44 gibi boş hücreler)
+                if not aciklama_val and not tarif_val and not any(parse_sayi(c) > 0 for c in clean_cells[3:]):
+                    continue
 
-                    # 2. DOĞRUDAN 'FİYAT' SÜTUNU:
-                    # Başlıkta bulunduysa o sütun, bulunamadıysa:
-                    # 7 sütunlu yapıda (Döviz Toplam varsa) sondan 3., 6 sütunlu yapıda sondan 2. hücredir.
-                    if col_fiyat_idx != -1 and col_fiyat_idx < len(r_cells) and r_cells[col_fiyat_idx]:
-                        fiyat_cell = r_cells[col_fiyat_idx]
-                    else:
-                        if len(valid_cells) >= 6:
-                            # [S.NO, Açıklama, Miktar, Birim, FİYAT, Döviz Toplam, Toplam TL]
-                            fiyat_cell = valid_cells[-3]
-                        else:
-                            fiyat_cell = valid_cells[-2]
+                # Grup Başlığı Tespiti (Örn: "Shell katık Hatlarının Çiftlenmesi" veya "Pompalar için...")
+                if aciklama_val and not tarif_val and not any(parse_sayi(c) > 0 for c in clean_cells[3:]):
+                    current_parent_group = aciklama_val.strip()
+                    continue
+                elif aciklama_val and any(k in aciklama_val.lower() for k in ["hatlarının çiftlenmesi", "liquid level switch", "montajının yapılması"]):
+                    current_parent_group = aciklama_val.strip()
 
-                    birim_fiyat_val = parse_sayi(fiyat_cell.replace("₺", "").replace("TL", ""))
+                # Sayısal Değerler
+                nums = [parse_sayi(c) for c in clean_cells if parse_sayi(c) > 0]
+                if not nums:
+                    continue
 
-                    # 3. MİKTAR VE BİRİM TESPİTİ
-                    mik = 0.0
-                    birim = "Adet"
-                    for idx, cell in enumerate(valid_cells):
-                        m_birim = re.search(r"^(Mt\.|Mt|Adet|Set|Metre|Pcs|Kg|A/S)$", cell, re.IGNORECASE)
-                        if m_birim:
-                            birim = cell
-                            if idx > 0:
-                                mik = parse_sayi(valid_cells[idx - 1])
+                # En son geçerli sayı DAİMA toplam satış TL tutarıdır
+                toplam_tl = nums[-1]
+                if toplam_tl <= 0:
+                    continue
+
+                # Miktar ve Birim Çekme
+                mik = 1.0
+                birim = "Adet"
+
+                # 3. ve 4. sütunları kontrol et
+                raw_mik = clean_cells[3] if len(clean_cells) > 3 else ""
+                raw_birim = clean_cells[4] if len(clean_cells) > 4 else ""
+
+                parsed_mik = parse_sayi(raw_mik)
+                if parsed_mik > 0:
+                    mik = parsed_mik
+                else:
+                    # Mobilizasyon veya kaymış satırlar için güvenli miktar arama
+                    for c in clean_cells[2:5]:
+                        v = parse_sayi(c)
+                        if 0 < v <= 5000 and v != toplam_tl:
+                            mik = v
                             break
 
-                    if mik <= 0:
-                        for cell in valid_cells[1:4]:
-                            val = parse_sayi(cell)
-                            if val > 0:
-                                mik = val
-                                break
+                m_b = re.search(r"\b(Mt\.|Mt|Adet|Set|Metre|Pcs|Kg|A/S|A/G)\b", raw_birim + " " + row_line, re.IGNORECASE)
+                if m_b:
+                    birim = m_b.group(1).capitalize()
 
-                    if mik <= 0:
-                        mik = 1.0
+                # Tanım Oluşturma (Kesilmeden, Başındaki Rakamları ve Kesitleri KORUYARAK)
+                tanim_parcalari = []
+                
+                if aciklama_val and aciklama_val != current_parent_group:
+                    tanim_parcalari.append(aciklama_val)
+                elif current_parent_group:
+                    tanim_parcalari.append(f"[{current_parent_group}]")
 
-                    # 4. PARA BİRİMİ TESPİTİ
-                    pb = "TRY"
-                    if "€" in fiyat_cell or "EUR" in fiyat_cell.upper():
-                        pb = "EUR"
-                    elif "$" in fiyat_cell or "USD" in fiyat_cell.upper():
-                        pb = "USD"
-                    elif satir_toplam_tl > 0 and (mik * birim_fiyat_val) > 0:
-                        oran = satir_toplam_tl / (mik * birim_fiyat_val)
-                        if abs(oran - kur_eur) < 1.0 or abs(oran - 56.16) < 2.0:
-                            pb = "EUR"
-                        elif abs(oran - kur_usd) < 1.0 or abs(oran - 48.66) < 2.0:
-                            pb = "USD"
+                if tarif_val and tarif_val != "-" and tarif_val not in tanim_parcalari:
+                    tanim_parcalari.append(tarif_val)
 
-                    # 5. AÇIKLAMA / MALZEME TANIMI
-                    tanim = valid_cells[1] if not re.match(r"^\d+$", valid_cells[1]) else valid_cells[0]
-                    tanim = re.sub(r"^\d+\s*[-_.]?\s*", "", tanim).strip()
+                if not tanim_parcalari:
+                    for c in clean_cells[:3]:
+                        if c and parse_sayi(c) == 0:
+                            tanim_parcalari.append(c)
 
-                    # Geçerli satır ise ekle
-                    if tanim and (birim_fiyat_val > 0 or satir_toplam_tl > 0):
-                        kalemler.append({
-                            "malzeme_adi": tanim,
-                            "miktar": mik,
-                            "birim": birim,
-                            "birim_satis": birim_fiyat_val,   # <-- Doğrudan 450,00 ₺ olan Fiyat hücresi
-                            "birim_fiyat": birim_fiyat_val,
-                            "toplam": satir_toplam_tl,        # <-- 900,00 ₺ olan Toplam TL hücresi
-                            "toplam_tl": satir_toplam_tl,
-                            "para_birimi": pb,
-                            "birim_maliyet": 0.0,
-                            "maliyet_pb": pb,
-                        })
-                except Exception:
+                tanim = " - ".join([t for t in tanim_parcalari if t]).strip(" -")
+                
+                # SADECE BAĞIMSIZ POS NUMARASINI TEMİZLE (Kablo kesitlerini: 6mm2, 16mm2, 300x, 1/2" KORU!)
+                tanim = re.sub(r"^\d+(?:\.|\s+-|\s+:|\s+)(?!\s*(?:mm|x|\*|/))", "", tanim).strip()
+
+                # Tanım temizliği (Kelimeler arası fazla boşlukları düzenle)
+                tanim = re.sub(r"\s+", " ", tanim)
+
+                # Boş veya anlamsız satırları ele
+                if not tanim or not re.search(r"[A-Za-zçğıöşüÇĞİÖŞÜ]", tanim):
                     continue
 
-        # Eğer dip toplam metinden alınamadıysa kalemlerin gerçek toplamını al
-        if toplam_tutar <= 0 and kalemler:
+                # TL Birim Satış Fiyatı (Toplam TL / Miktar)
+                birim_satis_tl = round(toplam_tl / mik, 2) if mik > 0 else toplam_tl
+
+                kalemler.append({
+                    "malzeme_adi": tanim,
+                    "miktar": mik,
+                    "birim": birim,
+                    "birim_satis": birim_satis_tl,
+                    "birim_fiyat": birim_satis_tl,
+                    "toplam": toplam_tl,
+                    "toplam_tl": toplam_tl,
+                    "para_birimi": "TRY",
+                    "birim_maliyet": 0.0,
+                    "maliyet_pb": "TRY",
+                })
+
+        if kalemler:
             toplam_tutar = round(sum(k["toplam_tl"] for k in kalemler), 2)
 
         return {
-            "teklif_kodu": teklif_kodu or "PT202600129",
-            "musteri": musteri_adi or "Modüler Sistem Müşterisi",
-            "musteri_iletisim": musteri_iletisim,
-            "teklif_tarihi": teklif_tarihi,
-            "muhendis": muhendis_adi or "Muhammed GÜNER",
-            "konu": konu_adi or "MODÜLER MALZEME TEMİNİ",
+            "teklif_kodu": teklif_kodu or "PT20250069",
+            "musteri": musteri_adi or "ÖMER SAVUCU",
+            "musteri_iletisim": musteri_iletisim or "omer.savucu@shell.com",
+            "teklif_tarihi": teklif_tarihi or "12.11.2025",
+            "muhendis": muhendis_adi or "Mustafa GÜRBÜZ",
+            "konu": konu_adi or "ANTALYA KATIK",
             "kur_usd": kur_usd,
             "kur_eur": kur_eur,
-            "toplam_tutar": round(toplam_tutar, 2),
+            "toplam_tutar": toplam_tutar,
             "para_birimi": "TRY",
             "kalemler": kalemler,
             "tam_metin": tam_metin
@@ -352,7 +368,7 @@ def extract_excel_full_with_cost_sheets(excel_file, kur_usd=48.7479, kur_eur=55.
         if m_fn:
             sonuc["teklif_kodu"] = m_fn.group(0).upper()
 
-    # --- 3. Aşama: Kalem Tablosu Başlık Satırını Bulma ve Kalemleri Çıkarma ---
+    # --- 3. Aşama: Gelişmiş Merged-Cell & PetroTek Kalem Ayrıştırıcı ---
     baslik_idx = -1
     for idx, row in df_satis.iloc[:35].iterrows():
         r_str = " ".join([str(v).lower() for v in row.values if pd.notna(v)])
@@ -361,118 +377,131 @@ def extract_excel_full_with_cost_sheets(excel_file, kur_usd=48.7479, kur_eur=55.
             break
 
     kalemler = []
+    current_parent_group = ""
+
     if baslik_idx != -1:
-        for r_i, r in df_satis.iloc[baslik_idx + 1:].iterrows():
-            # Satırdaki NaN olmayan dolu hücreleri sırayla alalım
-            raw_cells = [str(c).replace("\n", " ").strip() for c in r.values if pd.notna(c) and str(c).strip() not in ["", "nan", "None"]]
-            if len(raw_cells) < 3:
+        header_row = [str(c).strip().lower() if pd.notna(c) else "" for c in df_satis.iloc[baslik_idx].values]
+        
+        col_pos = 0
+        col_aciklama = 1
+        col_tarif = 2
+        col_miktar = 3
+        col_birim = 4
+
+        for c_i, h in enumerate(header_row):
+            if "pos" in h: col_pos = c_i
+            elif "açıklama" in h or "aciklama" in h: col_aciklama = c_i
+            elif "tarif" in h: col_tarif = c_i
+            elif "miktar" in h: col_miktar = c_i
+            elif "birim" in h and "fiyat" not in h: col_birim = c_i
+
+        for r_i in range(baslik_idx + 1, len(df_satis)):
+            row = df_satis.iloc[r_i]
+            row_vals = [str(c).strip() for c in row.values if pd.notna(c) and str(c).strip() not in ["", "nan", "None"]]
+            if not row_vals:
                 continue
 
-            row_line = " ".join(raw_cells).lower()
-            # Alt bilgi ve dip toplam satırlarını kesinlikle atla
+            row_line = " ".join(row_vals).lower()
+
+            # 1. KESİN DİP TOPLAM / ALT BİLGİ FİLTRESİ
+            # Malzeme toplamı, işçilik toplamı veya genel toplam satırına gelindiğinde ayrıştırmayı durdur
             if any(x in row_line for x in [
-                "toplam", "güncel kur", "döviz toplam", "tl toplam", "teklif toplamı", 
-                "kdv dahil", "opsiyon", "ödeme", "teslim süresi", "notlar"
+                "güncel kur", "döviz toplam", "tl toplam", "teklif toplamı", 
+                "malzeme €", "malzeme $", "malzeme tl", "işçilik toplamı",
+                "kdv", "opsiyon", "ödeme", "teslim", "notlar"
             ]):
+                current_parent_group = ""
+                break
+
+            # 2. Hücreleri Güvenli Oku
+            pos_val = str(row.values[col_pos]).strip() if col_pos < len(row.values) and pd.notna(row.values[col_pos]) else ""
+            aciklama_val = str(row.values[col_aciklama]).strip() if col_aciklama < len(row.values) and pd.notna(row.values[col_aciklama]) else ""
+            tarif_val = str(row.values[col_tarif]).strip() if col_tarif < len(row.values) and pd.notna(row.values[col_tarif]) else ""
+            
+            if aciklama_val.lower() in ["nan", "none"]: aciklama_val = ""
+            if tarif_val.lower() in ["nan", "none"]: tarif_val = ""
+
+            # 3. BOŞ SATIR FİLTRESİ (42, 43, 44 gibi sadece satır numarası olan boş satırları atla)
+            # Eğer açıklama ve tarif tamamen boşsa ve miktar sütununda veri yoksa bu satır boştur.
+            raw_mik_cell = str(row.values[col_miktar]).strip() if col_miktar < len(row.values) and pd.notna(row.values[col_miktar]) else ""
+            if not aciklama_val and not tarif_val and (not raw_mik_cell or raw_mik_cell in ["nan", "None", "0"]):
                 continue
 
-            # 1. Satır Numarasını (S.NO) Temizle
-            if re.match(r"^\d+$", raw_cells[0]) and len(raw_cells) > 1:
-                # İlk hücre sıra no ise geriye kalanları işle
-                data_cells = raw_cells[1:]
-            else:
-                data_cells = raw_cells
+            # 4. Grup Başlığı Takibi (Örn: "Shell katık Hatlarının Çiftlenmesi" veya "Pompalar için...")
+            if aciklama_val and not tarif_val and not any(parse_sayi(v) > 0 for v in row_vals[2:]):
+                current_parent_group = aciklama_val.strip()
+                continue
+            elif aciklama_val and any(k in aciklama_val.lower() for k in ["hatlarının çiftlenmesi", "liquid level switch", "montajının yapılması"]):
+                current_parent_group = aciklama_val.strip()
 
-            if len(data_cells) < 3:
+            # 5. Sayısal Değerleri Çek
+            nums = [parse_sayi(v) for v in row_vals if parse_sayi(v) > 0]
+            if not nums:
                 continue
 
-            # 2. Malzeme Açıklamasını Bul (İçinde harf olan en uzun ilk hücre veya birleşim)
-            tanim_parcalari = []
-            kalan_hucreler = []
-            tanim_bitti = False
+            # Tablodaki en son sayı nihai "Toplam Fiyat Teklifi TL" tutarıdır
+            toplam_tl = nums[-1]
 
-            for c in data_cells:
-                # Eğer hücre sadece sayısal/miktar/para birimi değilse tanımdır
-                is_num = (parse_sayi(c) > 0 and re.match(r"^[\d\.,\s₺$€TL]+$", c))
-                is_unit = bool(re.match(r"^(Mt\.|Mt|Adet|Set|Metre|Pcs|Kg|A/S)$", c, re.IGNORECASE))
-
-                if not tanim_bitti and not is_num and not is_unit:
-                    tanim_parcalari.append(c)
-                else:
-                    tanim_bitti = True
-                    kalan_hucreler.append(c)
-
-            tanim = " ".join(tanim_parcalari).strip()
-            if not tanim:
-                continue
-
-            # 3. Kalan Hücrelerden Miktar, Birim, Fiyat ve Toplamı Çek
+            # 6. Miktar ve Birim Belirleme
             birim = "Adet"
-            sayisal_degerler = []
+            mik = 1.0
 
-            for c in kalan_hucreler:
-                m_birim = re.search(r"\b(Mt\.|Mt|Adet|Set|Metre|Pcs|Kg|A/S)\b", c, re.IGNORECASE)
-                if m_birim:
-                    birim = m_birim.group(1).capitalize()
-                
-                # Para veya miktar sayılarını topla
-                val_num = parse_sayi(c)
-                if val_num > 0 or c in ["0", "0,00", "0.00"]:
-                    sayisal_degerler.append(val_num)
+            raw_birim_cell = str(row.values[col_birim]).strip() if col_birim < len(row.values) and pd.notna(row.values[col_birim]) else ""
+            parsed_mik = parse_sayi(raw_mik_cell)
+            if parsed_mik > 0:
+                mik = parsed_mik
+            else:
+                for c in row_vals:
+                    val = parse_sayi(c)
+                    if 0 < val <= 5000 and val != toplam_tl:
+                        mik = val
+                        break
 
-            if not sayisal_degerler:
+            m_b = re.search(r"\b(Mt\.|Mt|Adet|Set|Metre|Pcs|Kg|A/S|A/G)\b", raw_birim_cell + " " + row_line, re.IGNORECASE)
+            if m_b:
+                birim = m_b.group(1).capitalize()
+
+            # 7. Malzeme / İş Tanımı
+            tanim_bilesenleri = []
+            
+            if aciklama_val and aciklama_val != current_parent_group:
+                tanim_bilesenleri.append(aciklama_val)
+            elif current_parent_group:
+                grup_temiz = current_parent_group.replace("\n", " ").strip()
+                tanim_bilesenleri.append(f"[{grup_temiz}]")
+
+            if tarif_val and tarif_val != "-":
+                tanim_bilesenleri.append(tarif_val)
+
+            if not tanim_bilesenleri:
+                for c in row_vals:
+                    if parse_sayi(c) == 0 and not re.match(r"^(Mt\.|Mt|Adet|Set|Metre|A/S|A/G|\d+)$", c, re.I):
+                        tanim_bilesenleri.append(c)
+
+            tanim = " - ".join([t for t in tanim_bilesenleri if t]).strip(" -")
+
+            # GÜVENLİ SIRA NO TEMİZLİĞİ:
+            # 6mm2 veya 16mm2 gibi kesit değerlerini bozmadan yalnızca "1 - ", "1. ", "1 " gibi sıra numaralarını eler
+            tanim = re.sub(r"^\d+(?:[\.:]|\s+-|\s+)(?!\s*(?:mm|x|\*))", "", tanim).strip()
+
+            if not tanim or toplam_tl <= 0 or not re.search(r"[A-Za-zçğıöşüÇĞİÖŞÜ]", tanim):
                 continue
 
-            # Excel PetroTek Düzeni:
-            # sayisal_degerler sırasıyla: [Miktar, Birim Fiyat, (varsa Döviz Toplam), Toplam TL]
-            if len(sayisal_degerler) == 1:
-                mik = 1.0
-                b_fiyat = sayisal_degerler[0]
-                toplam_tl = b_fiyat
-            elif len(sayisal_degerler) == 2:
-                mik = sayisal_degerler[0]
-                b_fiyat = sayisal_degerler[1]
-                toplam_tl = round(mik * b_fiyat, 2)
-            elif len(sayisal_degerler) == 3:
-                # [Miktar, Birim Fiyat, Toplam TL]
-                mik = sayisal_degerler[0]
-                b_fiyat = sayisal_degerler[1]
-                toplam_tl = sayisal_degerler[2]
-            else:
-                # [Miktar, Birim Fiyat, Döviz Toplam, Toplam TL] (4 veya daha fazla)
-                mik = sayisal_degerler[0]
-                b_fiyat = sayisal_degerler[1]       # <-- İkinci sayı DOĞRUDAN Birim Fiyat sütunudur!
-                toplam_tl = sayisal_degerler[-1]     # <-- En son sayı Toplam TL'dir
-
-            if mik <= 0:
-                mik = 1.0
-
-            # 4. Para Birimi Kontrolü
-            pb = "TRY"
-            if "€" in row_line or "eur" in row_line:
-                pb = "EUR"
-            elif "$" in row_line or "usd" in row_line:
-                pb = "USD"
-            elif toplam_tl > 0 and (mik * b_fiyat) > 0:
-                oran = toplam_tl / (mik * b_fiyat)
-                if abs(oran - kur_eur) < 1.0 or abs(oran - 56.16) < 2.5:
-                    pb = "EUR"
-                elif abs(oran - kur_usd) < 1.0 or abs(oran - 48.66) < 2.5:
-                    pb = "USD"
+            # 8. TL Birim Satış Fiyatı (Toplam TL / Miktar)
+            birim_satis_tl = round(toplam_tl / mik, 2) if mik > 0 else toplam_tl
 
             kalemler.append({
                 "malzeme_adi": tanim,
                 "miktar": mik,
                 "birim": birim,
-                "birim_satis": b_fiyat,             # Gerçek birim satış fiyatı
-                "birim_fiyat": b_fiyat,
-                "toplam": toplam_tl,                # Gerçek toplam satış tutarı
+                "birim_satis": birim_satis_tl,
+                "birim_fiyat": birim_satis_tl,
+                "toplam": toplam_tl,
                 "toplam_tl": toplam_tl,
-                "para_birimi": pb,
+                "para_birimi": "TRY",
                 "birim_maliyet": 0.0,
-                "maliyet_pb": pb,
+                "maliyet_pb": "TRY",
             })
-
     # --- 4. Aşama: Varsa Maliyet Sayfasından Eşleştirme ---
     maliyet_eslesen_adet = 0
     bulunan_sayfa = ""
