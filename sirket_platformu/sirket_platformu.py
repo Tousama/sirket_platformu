@@ -4,7 +4,14 @@ from .quote_builder import quote_builder_page
 from .quote_state import QuoteState
 from .dashboard_state import DashboardState
 from .technical_scope_view import technical_scope_page
-
+from .labor_engine_view import labor_engine_page
+from .revision_diff_view import revision_diff_page
+from .competitor_intel_view import competitor_intel_page
+from .dynamic_pricing_view import dynamic_pricing_page
+from .margin_simulator_view import margin_simulator_page
+from .price_catalog_view import price_catalog_page
+from .quote_upload_view import quote_upload_page
+from .cost_upload_view import cost_upload_page
 
 
 app = rx.App(
@@ -49,4 +56,76 @@ app.add_page(
     route="/teknik-kapsam",
     title="Teknik Kapsam Üreteci | PetroTek",
     on_load=QuoteState.set_active_module("Teknik Teklif & Kapsam Dosyası Üreteci"),
+)
+
+
+#Saha İşçilik & Montaj Sayfası
+app.add_page(
+    labor_engine_page,
+    route="/iscilik-motoru",
+    title="Saha İşçilik Motoru (A/S) | PetroTek",
+    on_load=QuoteState.set_active_module("Saha İşçilik & Montaj Motoru (A/S)"),
+)
+
+
+#Revizyon Takibi Sayfası
+app.add_page(
+    revision_diff_page,
+    route="/revizyon-takibi",
+    title="Revizyon & Fark Takibi | PetroTek",
+    on_load=QuoteState.set_active_module("Revizyon & Fark Takibi"),
+)
+
+
+#Rakip Fiyat Tahmini ve İstihbarat
+app.add_page(
+    competitor_intel_page,
+    route="/rakip-istihbarat",
+    title="Rakip Fiyat Tahmini & İstihbarat | PetroTek",
+    on_load=QuoteState.set_active_module("Rakip Fiyat Tahmini & İstihbarat"),
+)
+
+
+#Dinamik Fiyatlandırma & Kazanma Tahmini
+app.add_page(
+    dynamic_pricing_page,
+    route="/dinamik-fiyatlama",
+    title="Dinamik Fiyatlama & Kazanma Tahmini | PetroTek",
+    on_load=QuoteState.set_active_module("Dinamik Fiyatlama & Kazanma Tahmini"),
+)
+
+
+#Marj & İskonto Simülatörü
+app.add_page(
+    margin_simulator_page,
+    route="/marj-simulatoru",
+    title="Marj & İskonto Simülatörü | PetroTek",
+    on_load=QuoteState.set_active_module("Marj & İskonto Simülatörü"),
+)
+
+
+#Fiyat Hafızası & Katalog
+app.add_page(
+    price_catalog_page,
+    route="/fiyat-hafizasi",
+    title="Fiyat Hafızası & Katalog | PetroTek",
+    on_load=QuoteState.set_active_module("Fiyat Hafızası & Katalog"),
+)
+
+
+#Teklif Yükle
+app.add_page(
+    quote_upload_page,
+    route="/teklif-yukle",
+    title="Teklif Yükle (PDF / Excel) | PetroTek",
+    on_load=QuoteState.set_active_module("Teklif Yükle (PDF / Excel)"),
+)
+
+
+#Maliyet Yükle
+app.add_page(
+    cost_upload_page,
+    route="/maliyet-yukle",
+    title="Maliyet Yükle (PDF / Excel) | PetroTek",
+    on_load=QuoteState.set_active_module("Maliyet Yükle (PDF / Excel)"),
 )

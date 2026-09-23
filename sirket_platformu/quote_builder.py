@@ -28,8 +28,17 @@ MODULES_LIST = [
 MODULE_ROUTES = {
     "Dashboard (Analiz)": "/",
     "Yeni Teklif Hazırla & Çıktı Al": "/teklif-hazirla",
-    "Teknik Teklif & Kapsam Dosyası Üreteci": "/teknik-kapsam",  # <-- Eklendi
+    "Teknik Teklif & Kapsam Dosyası Üreteci": "/teknik-kapsam",
+    "Saha İşçilik & Montaj Motoru (A/S)": "/iscilik-motoru",
+    "Revizyon & Fark Takibi": "/revizyon-takibi",
+    "Rakip Fiyat Tahmini & İstihbarat": "/rakip-istihbarat",
+    "Dinamik Fiyatlama & Kazanma Tahmini": "/dinamik-fiyatlama",
+    "Marj & İskonto Simülatörü": "/marj-simulatoru",
+    "Fiyat Hafızası & Katalog": "/fiyat-hafizasi",
+    "Teklif Yükle (PDF / Excel)": "/teklif-yukle",
+    "Maliyet Yükle (PDF / Excel)": "/maliyet-yukle",  # <-- Eklendi
 }
+
 
 def sidebar_item(icon_name: str, label: str) -> rx.Component:
     is_active = (QuoteState.active_module == label)

@@ -6,5 +6,7 @@ config = rx.Config(
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),
         rx.plugins.RadixThemesPlugin(),
-    ]
+    ],
+    frontend_port=3000,
+    backend_port=8000,
 )
