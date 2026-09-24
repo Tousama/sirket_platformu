@@ -126,22 +126,16 @@ class TechnicalScopeState(rx.State):
     # =========================================================================
     def _extract_metadata(self, text: str) -> Tuple[str, str]:
         """Şartname no, revizyon ve müşteri unvanını tespit eder."""
-        first_page = text[:2500]
+        first_page = text[:3500]
+        lines = [line.strip() for line in first_page.split("\n") if line.strip()]
 
-        # Şartname No Tespiti (Örn: TS-GA-DOL-004-R00)
-        ts_match = re.search(r"(?:TS\s*No|Teknik\s*Şartname\s*No)\s*[:|]?\s*([A-Z0-9\-_]+)", first_page, re.IGNORECASE)
-        sartname_kod = ts_match.group(1).strip() if ts_match else ""
-
-        # Başlık ve Konu Tespiti
-        konu_match = re.search(r"KONU\s*\|\s*([^\n\r]+)", first_page, re.IGNORECASE)
-        konu_str = konu_match.group(1).strip() if konu_match else ""
-
-        # Müşteri ve Tesis Tespiti
-        musteri_unvani = "Sayın Yetkili"
-        if re.search(r"g[üu]zel\s*enerj[iı]", first_page, re.IGNORECASE):
+        # 1. Müşteri ve Tesis / Kurum Tespiti
+        musteri_unvani = ""
+        if re.search(r"et[iı]\s*maden", first_page, re.IGNORECASE):
+            isletme = "Emet Bor İşletme Müdürlüğü" if "emet" in first_page.lower() else "İşletme Müdürlüğü"
+            musteri_unvani = f"Eti Maden İşletmeleri Genel Müdürlüğü - {isletme}"
+        elif re.search(r"g[üu]zel\s*enerj[iı]", first_page, re.IGNORECASE):
             musteri_unvani = "Güzel Enerji Akaryakıt A.Ş. - Teknik Müdürlük / İkmal ve Lojistik Direktörlüğü"
-            if not konu_str and "gebze" in first_page.lower():
-                konu_str = "Gebze Akaryakıt Terminali Dolum Adası Revizyonu"
         elif re.search(r"t[üu]pra[sş]", first_page, re.IGNORECASE):
             musteri_unvani = "TÜPRAŞ Türkiye Petrol Rafinerileri A.Ş. - Bakım & Proje Müdürlüğü"
         elif re.search(r"shell", first_page, re.IGNORECASE):
@@ -150,16 +144,43 @@ class TechnicalScopeState(rx.State):
             musteri_unvani = "Petrol Ofisi A.Ş. - Terminal Mühendislik Departmanı"
         elif re.search(r"aves", first_page, re.IGNORECASE):
             musteri_unvani = "AVES Enerji Yağ ve Gıda Sanayi A.Ş. - Teknik İşler Direktörlüğü"
+        else:
+            # Genel Kamu ve Kurum Taraması
+            for line in lines[:15]:
+                if any(k in line.upper() for k in ["GENEL MÜDÜRLÜĞÜ", "İŞLETME MÜDÜRLÜĞÜ", "FABRİKA MÜDÜRLÜĞÜ", "BAŞKANLIĞI", "A.Ş."]):
+                    musteri_unvani = line.strip()
+                    break
 
-        # Şartname No Birleştirme
+        if not musteri_unvani:
+            musteri_unvani = "Sayın Yetkili"
+
+        # 2. Şartname No ve Konu Tespiti
+        sartname_kod = ""
+        ts_match = re.search(r"(?:TS\s*No|Teknik\s*Şartname\s*No|İhale\s*Kayıt\s*No|İKN)\s*[:|]?\s*([A-Z0-9\-_/]+)", first_page, re.IGNORECASE)
+        if ts_match:
+            sartname_kod = ts_match.group(1).strip()
+
+        konu_str = ""
+        for i, l in enumerate(lines[:35]):
+            if any(k in l.upper() for k in ["TEKNİK ŞARTNAMESİ", "BAKIM HİZMETİ ALIMI", "REVİZYON İŞİ", "ONARIM İŞİ"]):
+                konu_str = l.replace("TEKNİK ŞARTNAMESİ", "").strip(" -:")
+                if len(konu_str) < 10 and i > 0:
+                    konu_str = lines[i - 1].strip() + " " + konu_str
+                break
+
+        if not konu_str:
+            konu_match = re.search(r"(?:1\.\s*KONU|KONU)\s*[:|]?\s*([^\n\r]+)", first_page, re.IGNORECASE)
+            if konu_match:
+                konu_str = konu_match.group(1).strip()
+
         if sartname_kod and konu_str:
             sartname_tam = f"{sartname_kod} - {konu_str}"
-        elif sartname_kod:
-            sartname_tam = sartname_kod
         elif konu_str:
             sartname_tam = konu_str
+        elif sartname_kod:
+            sartname_tam = sartname_kod
         else:
-            sartname_tam = "Endüstriyel Tesis Teknik Şartnamesi"
+            sartname_tam = "Endüstriyel Otomasyon & Tesis Teknik Şartnamesi"
 
         return sartname_tam, musteri_unvani
 
@@ -187,7 +208,8 @@ class TechnicalScopeState(rx.State):
 
         sartname_no_bulunan, muhatap_bulunan = self._extract_metadata(text)
 
-        # 2. Modül & Tesis Tipolojisi Skorlaması
+        # 2. Tipoloji & Kapsam Tespiti
+        is_dcs_otomasyon_bakim = any(x in t_low for x in ["dcs", "ge&nexus", "periyodik bakım", "arıza bakımı", "uzaktan bağlantı", "scada", "plc bakım", "kojenerasyon"])
         is_terminal_ada_revizyon = any(x in t_low for x in ["dolum adası", "ada 5", "ada-5", "peron", "junction box", "flashtech", "accuload", "katık"])
         is_tank_ciftligi = any(x in t_low for x in ["tank radar", "rex", "overfill", "scully", "tank sahası", "seviye şalteri"])
 
@@ -201,8 +223,62 @@ class TechnicalScopeState(rx.State):
         isveren_list = []
         haric_list = []
 
-        # SENARYO 1: AKARYAKIT TERMİNALİ DOLUM ADASI & KABLAJ REVİZYONU
-        if is_terminal_ada_revizyon:
+        # =====================================================================
+        # SENARYO 1: DCS / OTOMASYON PERİYODİK BAKIM & SERVİS HİZMETİ
+        # =====================================================================
+        if is_dcs_otomasyon_bakim:
+            kapsam_tipi = "DCS & Otomasyon Sistemi Yıllık Periyodik Bakım ve Acil Servis Hizmeti"
+            
+            # Sistem Tanımı (Örn: GE&NEXUS, 30 t/h Buhar Kazanı)
+            sistem_adi = "GE&NEXUS DCS Kontrol Sistemi" if "ge&nexus" in t_low else "DCS / SCADA Otomasyon Sistemi"
+            tesis_detay = "30 ton/h Buhar Kazanı Kojenerasyon Ünitesi" if "30 ton" in t_low or "30 t/h" in t_low else "üretim prosesi"
+
+            giris = (
+                f"İşbu teknik teklif dokümanı; {muhatap_bulunan} bünyesinde bulunan {tesis_detay}ne ait "
+                f"{sistem_adi}nin 1 (bir) yıllık periyodik genel bakımları, lisanslı yazılım yedeklemeleri, "
+                f"uzaktan teknik servis desteği ve 7/24 acil saha müdahale hizmetlerinin teknik şartnameye tam uygun olarak yürütülmesini kapsamaktadır."
+            )
+
+            # Şartnamedeki donanım modüllerini tespit et (MPU, MDI, MDO, MAI, SPIDER Switch vb.)
+            if "ge&nexus" in t_low or "mpu" in t_low:
+                is_kapsami_list.append(f"• {sistem_adi} kontrol paneli ana işlemci (MPU 55), dijital/analog giriş-çıkış modülleri (MDI, MDO, MAI), endüstriyel Ethernet switch ve Gateway haberleşme altyapısının fiziksel ve elektriksel kontrollerinin yapılması.")
+            else:
+                is_kapsami_list.append("• DCS/PLC kontrol panelleri, CPU, I/O modülleri, endüstriyel haberleşme switchleri ve güç kaynaklarının periyodik kontrol ve testlerinin gerçekleştirilmesi.")
+
+            # Periyodik Bakım & Yedekleme Kuralı
+            is_kapsami_list.append("• Sözleşme süresi boyunca yılda 1 defa yerinde genel bakım faaliyeti; DCS sunucuları, operatör iş istasyonları ve PLC/DCS program yedeklerinin (backup) alınarak harici disklere aktarılıp İdareye teslim edilmesi (Ulaşım dahil 5 iş günü).")
+
+            # Uzaktan Destek
+            m_saat = re.search(r"(\d+)\s*saatlik\s*süreyi\s*aşmamak", t_low)
+            saat_str = f"toplam {m_saat.group(1)} saat" if m_saat else "10 saat"
+            is_kapsami_list.append(f"• Yıl boyunca yazılım revizyonları, arıza tespiti ve işletme desteği amacıyla {saat_str} uzaktan bağlantı desteği sağlanması (Talep sonrası en geç 8 saat içerisinde bağlantı garantisi).")
+
+            # Acil Yerinde Müdahale
+            if "48" in t_low:
+                is_kapsami_list.append("• Uzaktan bağlantı yoluyla giderilemeyen kritik arızalarda, resmi yazılı bildirimi müteakip en geç 48 (kırk sekiz) saat içerisinde uzman mühendis ile sahada yerinde arıza müdahalesi sağlanması.")
+            else:
+                is_kapsami_list.append("• Uzaktan giderilemeyen arızalarda en geç 48 saat içerisinde tesiste yerinde servis desteğinin sağlanması.")
+
+            # Program Revizyonu ve SCADA
+            is_kapsami_list.append("• İdarenin talebi doğrultusunda kontrol lojiklerinde (interlock), alarm limitlerinde ve SCADA ekranlarında gerekli program revizyonlarının yapılarak sistem tepkilerinin optimize edilmesi.")
+            is_kapsami_list.append("• Yapılan tüm periyodik bakım ve arıza müdahaleleri sonrasında ayrıntılı Servis & Bakım Raporu tanzim edilerek karşılıklı imza altına alınması.")
+
+            # İşveren Sorumlulukları (Şartnameye tam uygun)
+            isveren_list.append("• DCS program yedeklerinin alınabilmesi için gerekli lisanslı yazılımların ve yedekleme harddisklerinin temin edilmesi.")
+            isveren_list.append("• Uzaktan bağlantı hizmeti için gerekli güvenli internet altyapısı ve uzak erişim programlarının hazır bulundurulması.")
+            isveren_list.append("• Arızalı olduğu tespit edilen veya değişmesi gereken kart, modül, switch vb. donanımların İdare tarafından temin edilmesi.")
+            isveren_list.append("• Yılda 1 defa verilecek genel bakım hizmeti için en az 3 (üç) hafta öncesinden Yükleniciye resmi yazılı bildirimde bulunulması.")
+
+            # Hariç Tutulanlar (Şartnamenin 10. Maddesine birebir uyumlu)
+            haric_list.append("• DCS kontrol sistemi haricindeki harici şebeke, trafo, MCC ve elektrik besleme hattı arızaları.")
+            haric_list.append("• Saha enstrümanlarının (transmitter, seviye şalteri, kontrol vanası, debimetre vb.) kalibrasyon ve mekanik borulama bakımları.")
+            haric_list.append("• DCS sisteminin çalışması için gerekli harici tüketim sarf malzemeleri (yazıcı şeridi, toner, disk vb.) temini.")
+            haric_list.append("• İdare tarafından temin edilmesi gereken arızalı kart, modül, gateway donanım malzeme bedelleri (Sözleşme işçilik ve servis kapsamlıdır).")
+
+        # =====================================================================
+        # SENARYO 2: AKARYAKIT TERMİNALİ DOLUM ADASI & KABLAJ REVİZYONU
+        # =====================================================================
+        elif is_terminal_ada_revizyon:
             kapsam_tipi = "Akaryakıt Terminali Dolum Adası & Elektrik-Kablaj Revizyonu (Anahtar Teslim)"
             ada_no = "5 No'lu (9-10 numaralı peron)" if ("ada 5" in t_low or "ada-5" in t_low) else "Dolum Adası"
             
@@ -230,20 +306,19 @@ class TechnicalScopeState(rx.State):
                 is_kapsami_list.append("• Mevcut Terminal Otomasyon Sistemi (TAS) ile tam entegrasyon, sinyal testleri ve haberleşme doğrulamasının yapılması.")
 
             is_kapsami_list.append("• Saha kablo meger (izolasyon) testleri, pulse/sinyal süreklilik testleri, mühürleme ve sistemin eksiksiz devreye alınması.")
-            is_kapsami_list.append("• İş bitiminde terminal personeline operasyonel eğitim verilmesi; As-Built projeler, test formları ve Kalite Kontrol Dosyasının (Soft & Hard Copy) teslimi.")
+            is_kapsami_list.append("• İş bitiminde terminal personeline operasyonel eğitim verilmesi; As-Built projeler, test formları ve Kalite Kontrol Dosyasının teslimi.")
 
             isveren_list.append("• Çalışma yapılacak dolum adası ve hatların elektriksel izolasyonunun (LOTO) İşveren tarafından eksiksiz sağlanması.")
-            if "forklift" in t_low:
-                isveren_list.append("• Terminal sınırları içerisindeki ağır taşıma ve kaldırma işlerinde terminalin mevcut forkliftinin yüklenici kullanımına tahsisi.")
             isveren_list.append("• Demonte edilen malzemelerin istifleneceği terminal içi uygun depo alanının gösterilmesi.")
             isveren_list.append("• İSG sıcak/soğuk saha çalışma izinlerinin (Permit to Work) iş takvimini aksatmayacak şekilde onaylanması.")
 
             haric_list.append("• İnşaat, betonarme kaide, saha asfalt/zemin kırım ve hafriyat işleri.")
             haric_list.append("• Şartname kapsamında yer almayan mekanik borulama, boru deplasman ve kaynaklı hat tadilatları.")
             haric_list.append("• Ana otomasyon sunucuları ve Flashtech lisans ücretleri.")
-            haric_list.append("• Terminal forklifti haricinde doğabilecek özel tonajlı vinç ve sepetli platform ihtiyaçları (gerektiğinde İşveren koordinasyonuyla sağlanır).")
 
-        # SENARYO 2: TANK ÇİFTLİĞİ ENSTRÜMANTASYON & SEVİYE SİSTEMLERİ
+        # =====================================================================
+        # SENARYO 3: TANK ÇİFTLİĞİ ENSTRÜMANTASYON & SEVİYE SİSTEMLERİ
+        # =====================================================================
         elif is_tank_ciftligi:
             kapsam_tipi = "Tank Sahası Enstrümantasyon & Aşırı Dolum Önleme (Overfill) Sistemi"
             giris = (
@@ -262,8 +337,10 @@ class TechnicalScopeState(rx.State):
             haric_list.append("• Tank nozul kaynakları, mekanik boru işleri ve yapısal çelik platform tadilatları.")
             haric_list.append("• Enerji temini için ana trafo/şalt sahasındaki ana pano tadilatları.")
 
-        # SENARYO 3: SAF MALZEME / ENSTRÜMAN TEMİNİ (SUPPLY ONLY)
-        elif montaj_skoru <= 2 or "sadece temin" in t_low:
+        # =====================================================================
+        # SENARYO 4: SAF MALZEME / ENSTRÜMAN TEMİNİ (SUPPLY ONLY)
+        # =====================================================================
+        elif (montaj_skoru <= 1 and temin_skoru >= 2) or "sadece temin" in t_low or "supply only" in t_low:
             kapsam_tipi = "Endüstriyel Enstrüman & Malzeme Temini (Supply Only)"
             giris = (
                 f"İşbu teknik teklif dokümanı; {muhatap_bulunan} tarafından talep edilen "
@@ -279,7 +356,9 @@ class TechnicalScopeState(rx.State):
             haric_list.append("• Sahada mekanik ve elektriksel montaj, kablolama ve sonlandırma işçilikleri.")
             haric_list.append("• Saha loop testleri, enerji verme ve devreye alma hizmetleri.")
 
-        # SENARYO 4: GENEL SAHA ELEKTRİK / ENSTRÜMANTASYON & MONTAJ
+        # =====================================================================
+        # SENARYO 5: GENEL SAHA ELEKTRİK / ENSTRÜMANTASYON & MONTAJ
+        # =====================================================================
         else:
             kapsam_tipi = "Endüstriyel Elektrik, Kablaj & Enstrümantasyon Montajı"
             giris = (
@@ -326,7 +405,6 @@ class TechnicalScopeState(rx.State):
 
         raw_text = ""
         try:
-            # 1. PDF İse:
             if fn_low.endswith(".pdf"):
                 pdf_reader = PdfReader(io.BytesIO(content))
                 for page in pdf_reader.pages:
@@ -334,14 +412,11 @@ class TechnicalScopeState(rx.State):
                     if t:
                         raw_text += t + "\n"
 
-            # 2. DOCX (Word) İse:
             elif fn_low.endswith(".docx"):
                 doc = Document(io.BytesIO(content))
-                # Paragrafları oku
                 for p in doc.paragraphs:
                     if p.text.strip():
                         raw_text += p.text + "\n"
-                # Tabloların içindeki metinleri ve şartname maddelerini oku
                 for table in doc.tables:
                     for row in table.rows:
                         row_vals = [cell.text.strip() for cell in row.cells if cell.text.strip()]

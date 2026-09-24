@@ -8,6 +8,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from typing import List, Dict, Any
+from .dashboard_state import DashboardState
+from .services.db_service import save_teklif_full
 
 class QuoteState(rx.State):
     # Proje & Müşteri Üst Bilgileri
@@ -55,24 +57,86 @@ class QuoteState(rx.State):
         },
     ]
 
-    # 1. BUTON: TASLAK KAYDET
-    def save_draft(self):
-        # Taslağı yerel JSON dosyasına veya veritabanına kaydeder
-        draft_data = {
-            "teklif_no": self.teklif_no,
-            "musteri_adi": self.musteri_adi,
-            "proje_adi": self.proje_adi,
-            "para_birimi": self.para_birimi,
-            "genel_toplam": self.genel_toplam,
-            "items": self.items,
-            "kapsam_metni": self.kapsam_metni,
-        }
+    # 1. BUTON: TASLAK KAYDET (SQLite & Dashboard Entegreli)
+    async def save_draft(self):
+      # 1. Yerel JSON yedeğini almaya devam etsin
+      draft_data = {
+          "teklif_no": self.teklif_no,
+          "musteri_adi": self.musteri_adi,
+          "proje_adi": self.proje_adi,
+          "para_birimi": self.para_birimi,
+          "genel_toplam": self.genel_toplam,
+          "items": self.items,
+          "kapsam_metni": self.kapsam_metni,
+      }
+      try:
         with open("son_teklif_taslagi.json", "w", encoding="utf-8") as f:
-            json.dump(draft_data, f, ensure_ascii=False, indent=2)
-            
-        # Kullanıcıya başarı bildirimi gönder
-        return rx.toast.success(f"{self.teklif_no} numaralı taslak başarıyla kaydedildi!", position="top-right")
+          json.dump(draft_data, f, ensure_ascii=False, indent=2)
+      except Exception:
+        pass
 
+      # 2. Döviz Kuru Dönüşümü (Eğer USD/EUR ise TL karşılığını hesapla)
+      kur = 1.0
+      if self.para_birimi == "USD":
+        kur = 43.64
+      elif self.para_birimi == "EUR":
+        kur = 51.84
+
+      satis_tl = round(float(self.genel_toplam or 0.0) * kur, 2)
+      maliyet_tl = round(float(self.toplam_maliyet or 0.0) * kur, 2)
+
+      # 3. SQLite için Kalemleri Formatla
+      kalemler_db = []
+      for it in self.items:
+        mik = float(it.get("miktar", 1.0))
+        b_satis = float(it.get("birim_satis", 0.0))
+        kalem_toplam_tl = round(float(it.get("toplam_tutar", 0.0)) * kur, 2)
+        b_maliyet_tl = round(float(it.get("birim_maliyet", 0.0)) * kur, 2)
+
+        kalemler_db.append({
+            "malzeme_adi": it.get("aciklama", "Tanımsız Kalem"),
+            "miktar": mik,
+            "birim": it.get("birim", "Adet"),
+            "birim_satis": round(b_satis * kur, 2),
+            "birim_fiyat": round(b_satis * kur, 2),
+            "toplam_tl": kalem_toplam_tl,
+            "birim_maliyet": b_maliyet_tl,
+            "para_birimi": self.para_birimi,
+        })
+
+      # 4. Ana Teklif Kaydı (SQLite formatına uygun)
+      teklif_verisi = {
+          "kod": self.teklif_no.strip().upper(),
+          "musteri": self.musteri_adi.strip(),
+          "musteri_iletisim": "",
+          "konu": self.proje_adi.strip(),
+          "teklif_tarihi": (
+              pd.Timestamp.now().strftime("%d.%m.%Y")
+          ),  # Bugünün tarihi
+          "sorumlu": "Mustafa GÜRBÜZ",
+          "satis_toplam": satis_tl,
+          "maliyet_toplam": maliyet_tl,
+          "durum": "Hazırlanıyor",
+          "yaslanma_gun": 0,
+      }
+
+      # 5. SQLite Veritabanına Kalıcı Olarak Yaz
+      save_teklif_full(teklif_verisi, kalemler_db)
+
+      # 6. Dashboard State'ini Anında Yenile
+      try:
+        dash_state = await self.get_state(DashboardState)
+        await dash_state.load_quotes()
+      except Exception:
+        pass
+
+      return rx.toast.success(
+          f"'{self.teklif_no}' numaralı taslak SQLite veritabanına ve portföye"
+          " kaydedildi!",
+          position="top-right",
+      )
+  
+    
     # 2. BUTON: EXCEL İNDİR
     def export_excel(self):
         # Tablo verilerini DataFrame'e aktarma

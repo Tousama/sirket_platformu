@@ -19,7 +19,8 @@ from .procurement_rfq_view import procurement_rfq_page
 from .cashflow_schedule_view import cashflow_schedule_page
 from .spec_validator_view import spec_validator_page
 from .incoming_mail_view import incoming_mail_page
-
+from .quote_edit_view import quote_edit_page
+from .engineer_view import engineer_page
 
 app = rx.App(
     theme=rx.theme(
@@ -194,4 +195,25 @@ app.add_page(
     route="/gelen-mail", 
     title="Gelen Teklif Mailleri (IMAP) | PetroTek",
     on_load=QuoteState.set_active_module("Gelen Teklif Mailleri (IMAP)"),
-    )
+)
+
+
+
+#Teklif Düzenle / Sil
+app.add_page(
+    quote_edit_page, 
+    route="/teklif-duzenle-sil", 
+    title="Teklif Düzenle / Sil | PetroTek",
+    on_load=QuoteState.set_active_module("Teklif Düzenle / Sil"),
+)
+
+
+
+
+#Mühendis Yönetimi
+app.add_page(
+    engineer_page, 
+    route="/muhendis-yonetimi", 
+    title="Mühendis Yönetimi | PetroTek",
+    on_load=QuoteState.set_active_module("Mühendis Yönetimi"),
+)

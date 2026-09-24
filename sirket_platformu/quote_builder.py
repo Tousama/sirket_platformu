@@ -43,6 +43,8 @@ MODULE_ROUTES = {
     "Nakit Akışı (Cash-Flow) & Tedarik Çizel...": "/nakit-akisi-tedarik",
     "Teknik Şartname & Datasheet Doğrulayıcı": "/sartname-dogrulayici",
     "Gelen Teklif Mailleri (IMAP)": "gelen-mail",
+    "Teklif Düzenle / Sil" : "teklif-duzenle-sil",
+    "Mühendis Yönetimi": "muhendis-yonetimi",
 }
 
 

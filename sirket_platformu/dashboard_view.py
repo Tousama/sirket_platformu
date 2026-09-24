@@ -1,5 +1,4 @@
 import reflex as rx
-from typing import Dict, Any
 from .dashboard_state import DashboardState
 from .quote_builder import sidebar
 
@@ -92,7 +91,6 @@ def pie_chart_card() -> rx.Component:
                 rx.text("Adet Bazında", font_size="11px", color="#64748b"),
                 width="100%",
             ),
-            # Donut Grafik
             rx.box(
                 rx.recharts.pie_chart(
                     rx.recharts.pie(
@@ -114,22 +112,10 @@ def pie_chart_card() -> rx.Component:
                 display="flex",
                 justify="center",
             ),
-            # Tıklanabilir 4 Lejant Butonu
             rx.hstack(
                 rx.hstack(
-                    rx.box(
-                        width="9px",
-                        height="9px",
-                        border_radius="2px",
-                        background=rx.cond(DashboardState.hide_hazirlaniyor, "#475569", "#22d3ee"),
-                    ),
-                    rx.text(
-                        "Hazırlanıyor",
-                        font_size="11.5px",
-                        color=rx.cond(DashboardState.hide_hazirlaniyor, "#64748b", "#cbd5e1"),
-                        text_decoration=rx.cond(DashboardState.hide_hazirlaniyor, "line-through", "none"),
-                        user_select="none",
-                    ),
+                    rx.box(width="9px", height="9px", border_radius="2px", background=rx.cond(DashboardState.hide_hazirlaniyor, "#475569", "#22d3ee")),
+                    rx.text("Hazırlanıyor", font_size="11.5px", color=rx.cond(DashboardState.hide_hazirlaniyor, "#64748b", "#cbd5e1"), user_select="none"),
                     spacing="2",
                     align_items="center",
                     cursor="pointer",
@@ -137,22 +123,10 @@ def pie_chart_card() -> rx.Component:
                     border_radius="4px",
                     background="rgba(255, 255, 255, 0.03)",
                     on_click=DashboardState.toggle_hazirlaniyor,
-                    _hover={"background": "rgba(255, 255, 255, 0.08)"},
                 ),
                 rx.hstack(
-                    rx.box(
-                        width="9px",
-                        height="9px",
-                        border_radius="2px",
-                        background=rx.cond(DashboardState.hide_kazanildi, "#475569", "#10b981"),
-                    ),
-                    rx.text(
-                        "Kazanıldı",
-                        font_size="11.5px",
-                        color=rx.cond(DashboardState.hide_kazanildi, "#64748b", "#cbd5e1"),
-                        text_decoration=rx.cond(DashboardState.hide_kazanildi, "line-through", "none"),
-                        user_select="none",
-                    ),
+                    rx.box(width="9px", height="9px", border_radius="2px", background=rx.cond(DashboardState.hide_kazanildi, "#475569", "#10b981")),
+                    rx.text("Kazanıldı", font_size="11.5px", color=rx.cond(DashboardState.hide_kazanildi, "#64748b", "#cbd5e1"), user_select="none"),
                     spacing="2",
                     align_items="center",
                     cursor="pointer",
@@ -160,22 +134,10 @@ def pie_chart_card() -> rx.Component:
                     border_radius="4px",
                     background="rgba(255, 255, 255, 0.03)",
                     on_click=DashboardState.toggle_kazanildi,
-                    _hover={"background": "rgba(255, 255, 255, 0.08)"},
                 ),
                 rx.hstack(
-                    rx.box(
-                        width="9px",
-                        height="9px",
-                        border_radius="2px",
-                        background=rx.cond(DashboardState.hide_musteride, "#475569", "#06b6d4"),
-                    ),
-                    rx.text(
-                        "Müşteride",
-                        font_size="11.5px",
-                        color=rx.cond(DashboardState.hide_musteride, "#64748b", "#cbd5e1"),
-                        text_decoration=rx.cond(DashboardState.hide_musteride, "line-through", "none"),
-                        user_select="none",
-                    ),
+                    rx.box(width="9px", height="9px", border_radius="2px", background=rx.cond(DashboardState.hide_musteride, "#475569", "#06b6d4")),
+                    rx.text("Müşteride", font_size="11.5px", color=rx.cond(DashboardState.hide_musteride, "#64748b", "#cbd5e1"), user_select="none"),
                     spacing="2",
                     align_items="center",
                     cursor="pointer",
@@ -183,22 +145,10 @@ def pie_chart_card() -> rx.Component:
                     border_radius="4px",
                     background="rgba(255, 255, 255, 0.03)",
                     on_click=DashboardState.toggle_musteride,
-                    _hover={"background": "rgba(255, 255, 255, 0.08)"},
                 ),
                 rx.hstack(
-                    rx.box(
-                        width="9px",
-                        height="9px",
-                        border_radius="2px",
-                        background=rx.cond(DashboardState.hide_reddedildi, "#475569", "#ef4444"),
-                    ),
-                    rx.text(
-                        "Reddedildi (Zaman Aşımı)",
-                        font_size="11.5px",
-                        color=rx.cond(DashboardState.hide_reddedildi, "#64748b", "#cbd5e1"),
-                        text_decoration=rx.cond(DashboardState.hide_reddedildi, "line-through", "none"),
-                        user_select="none",
-                    ),
+                    rx.box(width="9px", height="9px", border_radius="2px", background=rx.cond(DashboardState.hide_reddedildi, "#475569", "#ef4444")),
+                    rx.text("Reddedildi", font_size="11.5px", color=rx.cond(DashboardState.hide_reddedildi, "#64748b", "#cbd5e1"), user_select="none"),
                     spacing="2",
                     align_items="center",
                     cursor="pointer",
@@ -206,7 +156,6 @@ def pie_chart_card() -> rx.Component:
                     border_radius="4px",
                     background="rgba(255, 255, 255, 0.03)",
                     on_click=DashboardState.toggle_reddedildi,
-                    _hover={"background": "rgba(255, 255, 255, 0.08)"},
                 ),
                 justify="center",
                 spacing="2",
@@ -226,7 +175,6 @@ def pie_chart_card() -> rx.Component:
 def dashboard_main() -> rx.Component:
     return rx.box(
         rx.vstack(
-            # Üst Header Barı
             rx.hstack(
                 rx.hstack(
                     rx.heading("Dashboard (Analiz)", size="4", color="#ffffff"),
@@ -236,7 +184,6 @@ def dashboard_main() -> rx.Component:
                     align_items="center",
                 ),
                 rx.spacer(),
-                # TCMB Rozeti + Para Birimi Seçicisi + Yeni Teklif Butonu
                 rx.hstack(
                     rx.badge(
                         rx.icon("landmark", size=13),
@@ -271,12 +218,6 @@ def dashboard_main() -> rx.Component:
                         radius="full",
                         on_click=rx.redirect("/teklif-hazirla"),
                     ),
-                    rx.icon_button(
-                        rx.icon("bell", size=16),
-                        variant="ghost",
-                        color_scheme="gray",
-                        size="2",
-                    ),
                     spacing="3",
                     align_items="center",
                 ),
@@ -285,7 +226,6 @@ def dashboard_main() -> rx.Component:
                 border_bottom="1px solid #1e293b",
             ),
 
-            # 4 Kritik KPI Kartı (Tıklanabilir Filtreler)
             rx.hstack(
                 kpi_box("Talep Edilen Teklif", DashboardState.total_quotes_count.to(str), DashboardState.total_quotes_amount_str, "", "layers", "ALL"),
                 kpi_box(">1 Gün Geciken Hazırlık", DashboardState.delayed_count.to(str), "", "Müdahale gereken acil talepler", "clock", "DELAYED", is_alert=True),
@@ -295,10 +235,8 @@ def dashboard_main() -> rx.Component:
                 spacing="3",
             ),
 
-            # Grafikler Alanı (2 Kolon)
             rx.grid(
                 pie_chart_card(),
-                # Sağ: Yaşlanma Dağılımı Bar Grafiği
                 rx.card(
                     rx.vstack(
                         rx.hstack(
@@ -331,7 +269,6 @@ def dashboard_main() -> rx.Component:
                 width="100%",
             ),
 
-            # Kayıtlı Teklif Portföyü Tablosu
             rx.card(
                 rx.vstack(
                     rx.hstack(
@@ -384,8 +321,6 @@ def dashboard_main() -> rx.Component:
                                 rx.table.column_header_cell("İŞLEM"),
                             )
                         ),
-# dashboard_view.py içindeki rx.table.body kısmında ilgili hücreyi şöyle değiştirin:
-
                         rx.table.body(
                             rx.foreach(
                                 DashboardState.filtered_quotes,
@@ -397,14 +332,7 @@ def dashboard_main() -> rx.Component:
                                     rx.table.cell(status_badge(row["durum"].to(str))),
                                     rx.table.cell(rx.text(row["formatted_maliyet"].to(str), font_size="12px", color="#cbd5e1")),
                                     rx.table.cell(rx.text(row["formatted_satis"].to(str), font_size="12px", font_weight="bold", color="#ffffff")),
-                                    rx.table.cell(
-                                        rx.text(
-                                            row["formatted_kar_marji"].to(str),
-                                            font_size="12px",
-                                            font_weight="bold",
-                                            color="#4ade80",
-                                        )
-                                    ),
+                                    rx.table.cell(rx.text(row["formatted_kar_marji"].to(str), font_size="12px", font_weight="bold", color="#4ade80")),
                                     rx.table.cell(
                                         rx.icon_button(
                                             rx.icon("sliders-horizontal", size=14),
@@ -447,5 +375,5 @@ def dashboard_page() -> rx.Component:
         width="100%",
         height="100vh",
         overflow="hidden",
-        on_mount=DashboardState.on_load
+        on_mount=DashboardState.load_quotes,  # Her dashboard'a gelişte SQLite'tan taze veriyi çeker
     )

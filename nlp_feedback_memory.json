@@ -1,0 +1,13 @@
+[
+  {
+    "sartname_no": "Endüstriyel Tesis Teknik Şartnamesi",
+    "uploaded_file": "eti_maden_dcs_bakım_işi.pdf",
+    "tespit_tipi": "Endüstriyel Enstrüman & Malzeme Temini (Supply Only)",
+    "muhatap_hitap": "Sayın Yetkili",
+    "approved_giris": "İşbu teknik teklif dokümanı; Sayın Yetkili tarafından talep edilen şartname föylerine uygun enstrümanların orijinal fabrika çıkışlı olarak temini, sertifikasyonu ve şantiye teslimini kapsamaktadır.",
+    "approved_scope": "• Şartname teknik kriterlerine ve talep edilen ATEX/IECEx koruma sınıflarına haiz cihaz temini.\n• EN 10204 3.1 Malzeme İzlenebilirlik ve Fabrika Kalibrasyon Test Sertifikalarının teslimi.\n• Ekipmanların nakliye sigortalı (DAP/CIP) olarak tesis sahasına güvenli teslimatı.",
+    "approved_employer": "• Malzemelerin şantiye sahasında teslim alınması, uygun kapalı depolama koşullarının sağlanması.\n• Malzeme muayene ve kabul protokollerinin şartname takvimine uygun imzalanması.",
+    "approved_exclusions": "• Sahada mekanik ve elektriksel montaj, kablolama ve sonlandırma işçilikleri.\n• Saha loop testleri, enerji verme ve devreye alma hizmetleri.",
+    "feedback_notes": "Bu dosya malzeme temini değildir. Buhar kazanına ait DCS sisteminin bakım hizmetidir."
+  }
+]

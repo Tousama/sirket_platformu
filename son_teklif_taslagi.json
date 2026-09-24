@@ -1,40 +1,9 @@
 {
-  "teklif_no": "TK-2026-094",
-  "musteri_adi": "Tüpraş Rafineri A.Ş.",
-  "proje_adi": "Dolum Adası Otomasyon & Ex-Proof Saha Revizyonu",
+  "teklif_no": "PT202600164",
+  "musteri_adi": "Eti Maden İşletmeleri",
+  "proje_adi": "Buhar Kazanına Ait DCS Sisteminin Yıllık Bakımı",
   "para_birimi": "USD",
-  "genel_toplam": 11582.0,
-  "items": [
-    {
-      "tip": "Malzeme",
-      "aciklama": "Ex-Proof IP66 Paslanmaz Çelik Dağıtım Panosu",
-      "miktar": 2.0,
-      "birim": "Adet",
-      "birim_maliyet": 1450.0,
-      "kar_marji": 30.0,
-      "birim_satis": 1885.0,
-      "toplam_tutar": 3770.0
-    },
-    {
-      "tip": "Enstrümantasyon",
-      "aciklama": "Coriolis Kütlesel Akış Ölçer (DN50, Ex-d)",
-      "miktar": 1.0,
-      "birim": "Adet",
-      "birim_maliyet": 4200.0,
-      "kar_marji": 22.0,
-      "birim_satis": 5124.0,
-      "toplam_tutar": 5124.0
-    },
-    {
-      "tip": "İşçilik",
-      "aciklama": "Saha Kablo Çekimi, Kanal Montajı & Test/Devreye Alma",
-      "miktar": 80.0,
-      "birim": "Metre",
-      "birim_maliyet": 24.0,
-      "kar_marji": 40.0,
-      "birim_satis": 33.6,
-      "toplam_tutar": 2688.0
-    }
-  ],
+  "genel_toplam": 0.0,
+  "items": [],
   "kapsam_metni": ""
 }
