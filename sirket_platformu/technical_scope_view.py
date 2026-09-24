@@ -15,7 +15,6 @@ def card_header_text(num_str: str, text_str: str) -> rx.Component:
 def upload_box() -> rx.Component:
     return rx.card(
         rx.vstack(
-            # Üst Bilgi ve Buton Satırı
             rx.hstack(
                 rx.hstack(
                     rx.box(
@@ -30,13 +29,13 @@ def upload_box() -> rx.Component:
                             rx.cond(
                                 TechnicalScopeState.tespit_edilen_tip != "",
                                 rx.badge(TechnicalScopeState.tespit_edilen_tip, color_scheme="green", variant="surface", radius="full", size="1"),
-                                rx.badge("Petrol Tesisleri & ATEX Odaklı", color_scheme="purple", variant="surface", radius="full", size="1"),
+                                rx.badge("Petrol & Endüstriyel Tesis Odaklı", color_scheme="purple", variant="surface", radius="full", size="1"),
                             ),
                             spacing="2",
                             align_items="center",
                         ),
                         rx.text(
-                            "Müşteri teknik şartnamesini yükleyin; sistem kurum, referans no, iş kapsamı, TAS entegrasyonu ve sorumluluk sınırlarını otomatik ayrıştırsın.",
+                            "Müşteri teknik şartnamesini yükleyin; sistem kurum, referans no, iş kapsamı maddeleri ve sorumluluk sınırlarını dinamik ayrıştırsın.",
                             font_size="12px",
                             color="#94a3b8",
                         ),
@@ -47,7 +46,6 @@ def upload_box() -> rx.Component:
                     align_items="center",
                 ),
                 rx.spacer(),
-                # Çözümle Butonu
                 rx.button(
                     rx.icon("wand-sparkles", size=16),
                     "Şartnameyi Çözümle",
@@ -64,8 +62,6 @@ def upload_box() -> rx.Component:
                 width="100%",
                 align_items="center",
             ),
-
-            # Geniş Drag & Drop Alanı (PDF + DOCX Destekli)
             rx.upload(
                 rx.vstack(
                     rx.box(
@@ -186,13 +182,12 @@ def feedback_box() -> rx.Component:
 def technical_scope_main() -> rx.Component:
     return rx.box(
         rx.vstack(
-            # Üst Bar
             rx.hstack(
                 rx.hstack(
                     rx.icon("file-text", size=18, color="#38bdf8"),
                     rx.heading("Teknik Teklif & Kapsam Dosyası Üreteci", size="4", color="#ffffff"),
                     rx.text("/", color="#475569"),
-                    rx.text("PetroTek Engineering", color="#94a3b8", font_size="13px"),
+                    rx.text("PetroTek Elektrik", color="#94a3b8", font_size="13px"),
                     spacing="2",
                     align_items="center",
                 ),
@@ -220,16 +215,14 @@ def technical_scope_main() -> rx.Component:
                 border_bottom="1px solid #1e293b",
             ),
 
-            # AI / NLP Şartname Yükleme ve Otomasyon Kutusu
             upload_box(),
 
-            # Satır 1: Teklif Bilgileri & Giriş Yazısı
             rx.grid(
                 rx.card(
                     rx.vstack(
                         card_header_text("1. ", "TEKLİF VE ŞARTNAME BİLGİLERİ"),
                         rx.vstack(
-                            rx.text("Referans Teklif:", font_size="11px", color="#94a3b8"),
+                            rx.text("Referans Teklif (DB):", font_size="11px", color="#94a3b8"),
                             rx.select(
                                 TechnicalScopeState.referans_secenekleri,
                                 value=TechnicalScopeState.secilen_referans,
@@ -303,14 +296,13 @@ def technical_scope_main() -> rx.Component:
                 width="100%",
             ),
 
-            # Satır 2: İş Kapsamı Maddeleri
             rx.card(
                 rx.vstack(
                     card_header_text("3. ", "İŞ KAPSAMI MADDELERİ (SCOPE OF WORK)"),
                     rx.text_area(
                         value=TechnicalScopeState.is_kapsami,
                         on_change=TechnicalScopeState.set_is_kapsami,
-                        height="180px",
+                        height="200px",
                         width="100%",
                         background="#070b14",
                         border="1px solid #1e293b",
@@ -329,7 +321,6 @@ def technical_scope_main() -> rx.Component:
                 width="100%",
             ),
 
-            # Satır 3: İşveren Sorumlulukları ve Hariç Tutulanlar
             rx.grid(
                 rx.card(
                     rx.vstack(
@@ -337,7 +328,7 @@ def technical_scope_main() -> rx.Component:
                         rx.text_area(
                             value=TechnicalScopeState.isveren_sorumluluklari,
                             on_change=TechnicalScopeState.set_isveren_sorumluluklari,
-                            height="110px",
+                            height="120px",
                             width="100%",
                             background="#070b14",
                             border="1px solid #1e293b",
@@ -359,7 +350,7 @@ def technical_scope_main() -> rx.Component:
                         rx.text_area(
                             value=TechnicalScopeState.haric_tutulanlar,
                             on_change=TechnicalScopeState.set_haric_tutulanlar,
-                            height="110px",
+                            height="120px",
                             width="100%",
                             background="#070b14",
                             border="1px solid #1e293b",
@@ -381,7 +372,6 @@ def technical_scope_main() -> rx.Component:
 
             feedback_box(),
 
-            # Alt Dışa Aktarma Butonu
             rx.hstack(
                 rx.spacer(),
                 rx.button(

@@ -3,6 +3,7 @@ from .labor_engine_state import LaborEngineState
 from .quote_builder import sidebar
 from typing import Any
 
+
 def section_title(num_str: str, text_str: str) -> rx.Component:
     return rx.text(
         rx.text.span(num_str, font_weight="bold", color="#38bdf8"),
@@ -10,6 +11,7 @@ def section_title(num_str: str, text_str: str) -> rx.Component:
         font_size="11.5px",
         letter_spacing="0.5px",
     )
+
 
 def input_field(label: str, value: Any, on_change: Any) -> rx.Component:
     return rx.vstack(
@@ -26,6 +28,7 @@ def input_field(label: str, value: Any, on_change: Any) -> rx.Component:
         width="100%",
         spacing="1",
     )
+
 
 def summary_kpi(label: str, val_str: str, unit: str, color_val: str) -> rx.Component:
     return rx.card(
@@ -48,16 +51,17 @@ def summary_kpi(label: str, val_str: str, unit: str, color_val: str) -> rx.Compo
         flex="1",
     )
 
+
 def labor_engine_main() -> rx.Component:
     return rx.box(
         rx.vstack(
             # Üst Bar
             rx.hstack(
                 rx.hstack(
-                    rx.icon("zap", size=18, color="#f59e0b"),
+                    rx.icon("hard-hat", size=18, color="#f59e0b"),
                     rx.heading("Saha İşçilik & Montaj Motoru (A/S)", size="4", color="#ffffff"),
                     rx.text("/", color="#475569"),
-                    rx.text("PetroTek Engineering", color="#94a3b8", font_size="13px"),
+                    rx.text("PetroTek Elektrik", color="#94a3b8", font_size="13px"),
                     spacing="2",
                     align_items="center",
                 ),
@@ -67,7 +71,8 @@ def labor_engine_main() -> rx.Component:
                         rx.segmented_control.item("TRY (₺)", value="TRY"),
                         rx.segmented_control.item("USD ($)", value="USD"),
                         rx.segmented_control.item("EUR (€)", value="EUR"),
-                        value="TRY",
+                        value=LaborEngineState.para_birimi,
+                        on_change=LaborEngineState.set_para_birimi,
                         radius="full",
                         size="1",
                     ),
@@ -97,12 +102,17 @@ def labor_engine_main() -> rx.Component:
             rx.vstack(
                 rx.hstack(
                     rx.icon("zap", size=18, color="#f59e0b"),
-                    rx.text("Saha İşçilik & Montaj Maliyet Motoru (Adam/Saat - A/S)", font_size="15px", font_weight="700", color="#ffffff"),
+                    rx.text(
+                        "Saha İşçilik & Montaj Maliyet Motoru (Adam/Saat - Norm Tabanı v2.4)",
+                        font_size="15px",
+                        font_weight="700",
+                        color="#ffffff",
+                    ),
                     spacing="2",
                     align_items="center",
                 ),
                 rx.text(
-                    "Kablo metrajı, tava, Ex-proof gland ve enstrüman montaj parametreleriyle adam/saat (A/S) ve konaklama maliyetlerini hesaplayıp doğrudan teklif BOM'una aktarın.",
+                    "Şartnameden ve teklif kalemlerinden gelen verilerle montaj adam/saat (A/S), mobilizasyon ve konaklama maliyetlerini hesaplayıp teklif BOM'una aktarın.",
                     font_size="12.5px",
                     color="#94a3b8",
                 ),
@@ -115,11 +125,16 @@ def labor_engine_main() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.hstack(
-                        rx.text("İşçilik Kalemi Eklenecek Teklif:", font_size="11.5px", color="#94a3b8"),
+                        rx.text("İşçilik Kalemi Hesaplanacak Teklif:", font_size="11.5px", color="#94a3b8"),
                         rx.spacer(),
                         rx.hstack(
                             rx.text("Norm Tabanı:", font_size="11.5px", color="#64748b"),
-                            rx.text("PetroTek Saha A/S v2.4", font_size="11.5px", font_weight="bold", color="#38bdf8"),
+                            rx.text(
+                                "PetroTek Saha A/S v2.4 (ATEX & Endüstriyel Tesis)",
+                                font_size="11.5px",
+                                font_weight="bold",
+                                color="#38bdf8",
+                            ),
                             spacing="1",
                         ),
                         width="100%",
@@ -143,7 +158,6 @@ def labor_engine_main() -> rx.Component:
 
             # Girdi Alanları (Metraj & Ekip)
             rx.grid(
-                # 1. METRAJ & EKİPMAN SAYILARI
                 rx.card(
                     rx.vstack(
                         section_title("1. ", "METRAJ & EKİPMAN SAYILARI"),
@@ -152,7 +166,7 @@ def labor_engine_main() -> rx.Component:
                             input_field("Kablo Çekimi (m):", LaborEngineState.kablo_cekim_m, LaborEngineState.set_kablo_cekim_m),
                             input_field("Ex-Gland & Uç Bağlantı (ad):", LaborEngineState.gland_baglanti_ad, LaborEngineState.set_gland_baglanti_ad),
                             input_field("Enstrüman & Loop Test (ad):", LaborEngineState.enstruman_test_ad, LaborEngineState.set_enstruman_test_ad),
-                            input_field("Saha Panosu (ad):", LaborEngineState.saha_panosu_ad, LaborEngineState.set_saha_panosu_ad),
+                            input_field("Saha Panosu / JB (ad):", LaborEngineState.saha_panosu_ad, LaborEngineState.set_saha_panosu_ad),
                             input_field("İlave / Demontaj (A/S):", LaborEngineState.ilave_demontaj_as, LaborEngineState.set_ilave_demontaj_as),
                             columns="2",
                             spacing="3",
@@ -166,8 +180,6 @@ def labor_engine_main() -> rx.Component:
                     border_radius="12px",
                     padding="16px",
                 ),
-
-                # 2. EKİP & MOBİLİZASYON
                 rx.card(
                     rx.vstack(
                         section_title("2. ", "EKİP & MOBİLİZASYON"),
@@ -199,51 +211,101 @@ def labor_engine_main() -> rx.Component:
                 rx.vstack(
                     section_title("3. ", "HESAPLANAN SAHA İŞÇİLİK & MALİYET ÖZETİ"),
 
-                    # 4 Özet KPI Kutusu
                     rx.hstack(
                         summary_kpi("TEKNİSYEN A/S", LaborEngineState.teknisyen_as.to(str), "A/S", "#ffffff"),
                         summary_kpi("MÜHENDİS A/S", LaborEngineState.muhendis_as.to(str), "A/S", "#38bdf8"),
                         summary_kpi("TAHMİNİ SAHA SÜRESİ", LaborEngineState.tahmini_saha_suresi_gun.to(str), "Gün", "#f59e0b"),
-                        summary_kpi("İŞÇİLİK KÂR MARJI", "%" + LaborEngineState.kar_marji_yuzde.to(str), "", "#22c55e"),
+
+                        rx.card(
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.text("İŞÇİLİK KÂRI", font_size="10.5px", color="#94a3b8", font_weight="600"),
+                                    rx.badge("Kâr Oranı (%)", color_scheme="green", variant="surface", size="1"),
+                                    spacing="2",
+                                    align_items="center",
+                                ),
+                                rx.text(
+                                    LaborEngineState.kar_tutari_str,
+                                    font_size="22px",
+                                    font_weight="bold",
+                                    color="#22c55e",
+                                    letter_spacing="-0.5px",
+                                ),
+                                rx.hstack(
+                                    rx.text("Kâr Oranı:", font_size="11px", color="#64748b"),
+                                    rx.input(
+                                        value=LaborEngineState.custom_margin_percent.to(str),
+                                        on_change=LaborEngineState.set_custom_margin_percent,
+                                        width="55px",
+                                        size="1",
+                                        font_size="12px",
+                                        font_weight="bold",
+                                        text_align="center",
+                                        color="#22c55e",
+                                        background="#030712",
+                                        border="1px solid #15803d",
+                                        border_radius="6px",
+                                    ),
+                                    rx.text("%", font_size="11px", color="#64748b"),
+                                    rx.text("→", font_size="11px", color="#334155"),
+                                    rx.text(
+                                        "Satış: " + LaborEngineState.price_total_str,
+                                        font_size="11px",
+                                        font_weight="600",
+                                        color="#38bdf8",
+                                    ),
+                                    spacing="1",
+                                    align_items="center",
+                                    justify="center",
+                                ),
+                                align_items="center",
+                                justify="center",
+                                spacing="2",
+                            ),
+                            background="#070b14",
+                            border="1.5px solid rgba(34, 197, 94, 0.4)",
+                            border_radius="10px",
+                            padding="10px 14px",
+                            flex="1",
+                        ),
+
                         spacing="3",
                         width="100%",
                     ),
 
-                    # Maliyet / Satış Tablosu
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(
                                 rx.table.column_header_cell("KALEM AÇIKLAMASI"),
                                 rx.table.column_header_cell("MİKTAR", text_align="center"),
-                                rx.table.column_header_cell("MALİYET (₺)", text_align="right"),
-                                rx.table.column_header_cell("SATIŞ (₺)", text_align="right"),
+                                rx.table.column_header_cell(f"MALİYET ({LaborEngineState.currency_symbol})", text_align="right"),
+                                rx.table.column_header_cell(f"SATIŞ ({LaborEngineState.currency_symbol})", text_align="right"),
                             )
                         ),
                         rx.table.body(
                             rx.table.row(
                                 rx.table.cell(rx.text("Teknisyen Saha Montaj & Kablaj (450 ₺/s)", font_size="12px", color="#cbd5e1")),
                                 rx.table.cell(rx.text(LaborEngineState.teknisyen_as.to(str) + " A/S", font_size="12px", color="#94a3b8"), text_align="center"),
-                                rx.table.cell(rx.text(LaborEngineState.cost_teknisyen_str + " ₺", font_size="12px", color="#cbd5e1"), text_align="right"),
-                                rx.table.cell(rx.text(LaborEngineState.price_teknisyen_str + " ₺", font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.cost_teknisyen_str, font_size="12px", color="#cbd5e1"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.price_teknisyen_str, font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
                             ),
                             rx.table.row(
                                 rx.table.cell(rx.text("Süpervizörlük, Kalibrasyon & Loop Test (750 ₺/s)", font_size="12px", color="#cbd5e1")),
                                 rx.table.cell(rx.text(LaborEngineState.muhendis_as.to(str) + " A/S", font_size="12px", color="#94a3b8"), text_align="center"),
-                                rx.table.cell(rx.text(LaborEngineState.cost_muhendis_str + " ₺", font_size="12px", color="#cbd5e1"), text_align="right"),
-                                rx.table.cell(rx.text(LaborEngineState.price_muhendis_str + " ₺", font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.cost_muhendis_str, font_size="12px", color="#cbd5e1"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.price_muhendis_str, font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
                             ),
                             rx.table.row(
                                 rx.table.cell(rx.text("Mobilizasyon, Konaklama & Ulaşım", font_size="12px", color="#cbd5e1")),
                                 rx.table.cell(rx.text(LaborEngineState.tahmini_saha_suresi_gun.to(str) + " Gün", font_size="12px", color="#94a3b8"), text_align="center"),
-                                rx.table.cell(rx.text(LaborEngineState.cost_mobilizasyon_str + " ₺", font_size="12px", color="#cbd5e1"), text_align="right"),
-                                rx.table.cell(rx.text(LaborEngineState.price_mobilizasyon_str + " ₺", font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.cost_mobilizasyon_str, font_size="12px", color="#cbd5e1"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.price_mobilizasyon_str, font_size="12px", font_weight="600", color="#ffffff"), text_align="right"),
                             ),
-                            # GENEL TOPLAM
                             rx.table.row(
                                 rx.table.cell(rx.text("GENEL TOPLAM İŞÇİLİK & OPERASYON", font_size="12px", font_weight="bold", color="#38bdf8")),
                                 rx.table.cell(rx.text("-", font_size="12px", color="#94a3b8"), text_align="center"),
-                                rx.table.cell(rx.text(LaborEngineState.cost_total_str + " ₺", font_size="12.5px", font_weight="bold", color="#38bdf8"), text_align="right"),
-                                rx.table.cell(rx.text(LaborEngineState.price_total_str + " ₺", font_size="12.5px", font_weight="bold", color="#22c55e"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.cost_total_str, font_size="12.5px", font_weight="bold", color="#38bdf8"), text_align="right"),
+                                rx.table.cell(rx.text(LaborEngineState.price_total_str, font_size="12.5px", font_weight="bold", color="#22c55e"), text_align="right"),
                             ),
                         ),
                         width="100%",
@@ -257,55 +319,8 @@ def labor_engine_main() -> rx.Component:
                 padding="16px",
                 width="100%",
             ),
-            
-            # 4 Özet KPI Kutusu (Kâr Marjı Elle Düzenlenebilir)
-                    rx.hstack(
-                        summary_kpi("TEKNİSYEN A/S", LaborEngineState.teknisyen_as.to(str), "A/S", "#ffffff"),
-                        summary_kpi("MÜHENDİS A/S", LaborEngineState.muhendis_as.to(str), "A/S", "#38bdf8"),
-                        summary_kpi("TAHMİNİ SAHA SÜRESİ", LaborEngineState.tahmini_saha_suresi_gun.to(str), "Gün", "#f59e0b"),
-                        # DÜZENLENEBİLİR KÂR MARJI KARTI
-                        rx.card(
-                            rx.vstack(
-                                rx.hstack(
-                                    rx.text("İŞÇİLİK KÂR MARJI", font_size="10.5px", color="#94a3b8", font_weight="600"),
-                                    rx.badge("Düzenlenebilir", color_scheme="green", variant="surface", size="1"),
-                                    spacing="1",
-                                    align_items="center",
-                                ),
-                                rx.hstack(
-                                    rx.text("%", font_size="18px", font_weight="bold", color="#22c55e"),
-                                    rx.input(
-                                        value=LaborEngineState.custom_margin_percent.to(str),
-                                        on_change=LaborEngineState.set_custom_margin_percent,
-                                        width="75px",
-                                        size="2",
-                                        font_size="16px",
-                                        font_weight="bold",
-                                        text_align="center",
-                                        color="#22c55e",
-                                        background="#030712",
-                                        border="1px solid #15803d",
-                                        border_radius="6px",
-                                    ),
-                                    spacing="1",
-                                    align_items="center",
-                                    justify="center",
-                                ),
-                                align_items="center",
-                                justify="center",
-                                spacing="1",
-                            ),
-                            background="#070b14",
-                            border="1.5px solid rgba(34, 197, 94, 0.4)",
-                            border_radius="10px",
-                            padding="10px",
-                            flex="1",
-                        ),
-                        spacing="3",
-                        width="100%",
-                    ),
 
-            # Alt Aksiyon Barı (Hizmet Adı + BOM'a Ekle Butonu)
+            # Alt Aksiyon Barı + Onay Modalı
             rx.hstack(
                 rx.input(
                     value=LaborEngineState.hizmet_aciklamasi,
@@ -316,20 +331,72 @@ def labor_engine_main() -> rx.Component:
                     border="1px solid #1e293b",
                     font_size="12.5px",
                 ),
-                rx.button(
-                    rx.icon("arrow-right-circle", size=17),
-                    "Hesaplanan İşi Teklif BOM'una Ekle",
-                    color_scheme="green",
-                    size="3",
-                    padding_x="22px",
-                    border_radius="8px",
-                    on_click=LaborEngineState.aktar_bom,
-                    _hover={"transform": "translateY(-1px)", "box_shadow": "0 2px 10px rgba(34, 197, 94, 0.3)"},
+                rx.alert_dialog.root(
+                    rx.alert_dialog.trigger(
+                        rx.button(
+                            rx.icon("arrow-right-circle", size=17),
+                            "Hesaplanan İşi Teklif BOM'una Ekle",
+                            color_scheme="green",
+                            size="3",
+                            padding_x="22px",
+                            border_radius="8px",
+                            on_click=LaborEngineState.aktar_bom,
+                            _hover={"transform": "translateY(-1px)", "box_shadow": "0 2px 10px rgba(34, 197, 94, 0.3)"},
+                        ),
+                    ),
+                    rx.alert_dialog.content(
+                        rx.alert_dialog.title(
+                            LaborEngineState.onay_baslik,
+                            font_size="15px",
+                            font_weight="700",
+                            color="#ffffff",
+                        ),
+                        rx.alert_dialog.description(
+                            rx.text(
+                                LaborEngineState.onay_mesaj,
+                                font_size="13px",
+                                color="#cbd5e1",
+                                white_space="pre-wrap",
+                                line_height="1.6",
+                            ),
+                            margin_top="10px",
+                        ),
+                        rx.hstack(
+                            rx.alert_dialog.cancel(
+                                rx.button(
+                                    "İptal",
+                                    variant="soft",
+                                    color_scheme="gray",
+                                    size="2",
+                                    on_click=LaborEngineState.set_onay_modal_acik(False),
+                                ),
+                            ),
+                            rx.alert_dialog.action(
+                                rx.button(
+                                    "Evet, Üzerine Yaz",
+                                    color_scheme="red",
+                                    size="2",
+                                    on_click=LaborEngineState.onayli_aktar_bom,
+                                ),
+                            ),
+                            spacing="3",
+                            justify="end",
+                            width="100%",
+                            margin_top="16px",
+                        ),
+                        background="#0a0f1d",
+                        border="1px solid #1e293b",
+                        border_radius="12px",
+                        max_width="520px",
+                    ),
+                    open=LaborEngineState.onay_modal_acik,
+                    on_open_change=LaborEngineState.set_onay_modal_acik,
                 ),
                 spacing="3",
                 width="100%",
                 padding_top="4px",
             ),
+
             spacing="3",
             width="100%",
         ),
@@ -340,6 +407,7 @@ def labor_engine_main() -> rx.Component:
         background="#060913",
     )
 
+
 def labor_engine_page() -> rx.Component:
     return rx.hstack(
         sidebar(),
@@ -348,4 +416,5 @@ def labor_engine_page() -> rx.Component:
         width="100%",
         height="100vh",
         overflow="hidden",
+        on_mount=LaborEngineState.on_load,
     )

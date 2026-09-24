@@ -16,24 +16,21 @@ from .global_state import GlobalState
 
 class QuoteEditState(GlobalState):
     currency: str = "TRY (₺)"
-    
+
     available_quotes: List[Dict[str, Any]] = []
     quote_options: List[str] = []
     selected_quote_label: str = ""
     current_code: str = ""
 
-    # Ana Form Alanları
     edit_musteri: str = ""
     edit_durum: str = "Müşteride"
     edit_satis: str = "0.00"
     edit_maliyet: str = "0.00"
     edit_konu: str = ""
 
-    # BOM Kalemleri Listesi
     items: List[Dict[str, Any]] = []
-
-    # Tarihçe
     audit_logs: List[Dict[str, Any]] = []
+    _item_currency_map: Dict[int, str] = {}
 
     status_options: List[str] = [
         "Müşteride",
@@ -45,6 +42,62 @@ class QuoteEditState(GlobalState):
         "Reddedildi (Zaman Aşımı)"
     ]
 
+    # ---------------------------------------------------------------
+    # YARDIMCILAR
+    # ---------------------------------------------------------------
+    def _rate_for(self, pb: str) -> float:
+        pb = (pb or "TRY").upper()
+        if pb == "EUR":
+            return float(self.kur_eur) if float(self.kur_eur or 0) > 0 else 1.0
+        if pb == "USD":
+            return float(self.kur_usd) if float(self.kur_usd or 0) > 0 else 1.0
+        return 1.0
+
+    @staticmethod
+    def _parse_number(raw) -> float:
+        try:
+            s = str(raw).strip()
+            for ch in ("₺", "$", "€", " ", "\u00a0"):
+                s = s.replace(ch, "")
+            if not s:
+                return 0.0
+            if "," in s and "." in s:
+                if s.rfind(",") > s.rfind("."):
+                    s = s.replace(".", "").replace(",", ".")
+                else:
+                    s = s.replace(",", "")
+            elif "," in s:
+                s = s.replace(",", ".")
+            return round(float(s), 2)
+        except (ValueError, AttributeError, TypeError):
+            return 0.0
+
+    def _find_item_current_tl(self, kalem_id: int, field: str) -> float:
+        try:
+            kid = int(kalem_id)
+        except (ValueError, TypeError):
+            return 0.0
+        for it in self.items:
+            try:
+                if it.get("id") is not None and int(it["id"]) == kid:
+                    return self._parse_number(it.get(field, "0"))
+            except (ValueError, TypeError):
+                continue
+        return 0.0
+
+    async def _refresh_rates(self):
+        try:
+            from .services.tcmb import get_tcmb_kurlar
+            kurlar = get_tcmb_kurlar()
+            usd = float(kurlar.get("USD") or 0.0)
+            eur = float(kurlar.get("EUR") or 0.0)
+            if usd > 0:
+                self.kur_usd = usd
+            if eur > 0:
+                self.kur_eur = eur
+        except Exception:
+            pass
+
     def set_currency(self, val: Union[str, List[str]]):
         v = val[0] if isinstance(val, list) and val else str(val)
         self.currency = v
@@ -54,6 +107,7 @@ class QuoteEditState(GlobalState):
         return len(self.audit_logs)
 
     async def on_load(self):
+        await self._refresh_rates()
         await self.refresh_quote_list()
 
     async def refresh_quote_list(self):
@@ -83,6 +137,7 @@ class QuoteEditState(GlobalState):
             self.edit_konu = ""
             self.items = []
             self.audit_logs = []
+            self._item_currency_map = {}
 
     def set_selected_quote_label(self, label: str):
         self.selected_quote_label = label
@@ -98,9 +153,10 @@ class QuoteEditState(GlobalState):
         if t:
             self.edit_musteri = str(t.get("musteri", ""))
             self.edit_durum = str(t.get("durum", "Müşteride"))
+
             satis_val = float(t.get("satis_toplam", 0.0) or t.get("satis_try", 0.0))
             maliyet_val = float(t.get("maliyet_toplam", 0.0) or t.get("maliyet_try", 0.0))
-            
+
             self.edit_satis = f"{satis_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             self.edit_maliyet = f"{maliyet_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             self.edit_konu = str(t.get("konu", ""))
@@ -108,33 +164,51 @@ class QuoteEditState(GlobalState):
 
             raw_kalemler = t.get("kalemler", [])
             formatted_items = []
+            self._item_currency_map = {}
+
             for k in raw_kalemler:
                 mik = float(k.get("miktar", 1.0))
-                b_satis = float(k.get("birim_satis", 0.0) or k.get("birim_fiyat", 0.0))
-                b_maliyet = float(k.get("birim_maliyet", 0.0))
-                toplam_satis = float(k.get("toplam_tl", 0.0) or (mik * b_satis))
-                toplam_maliyet = round(mik * b_maliyet, 2)
-                
-                if toplam_satis > 0:
-                    k_marj = int(round(((toplam_satis - toplam_maliyet) / toplam_satis) * 100))
-                else:
+                kid = k.get("id")
+                pb = str(k.get("para_birimi", "TRY")).upper()
+                rate = self._rate_for(pb)
+
+                b_satis_ham = float(k.get("birim_satis", 0.0) or k.get("birim_fiyat", 0.0))
+                b_maliyet_ham = float(k.get("birim_maliyet", 0.0))
+
+                b_satis_tl = b_satis_ham * rate
+                b_maliyet_tl = b_maliyet_ham * rate
+
+                toplam_satis_tl = mik * b_satis_tl
+                toplam_maliyet_tl = mik * b_maliyet_tl
+
+                if toplam_maliyet_tl > 0:
+                    k_marj = int(round(((toplam_satis_tl / toplam_maliyet_tl) - 1) * 100))
+                elif toplam_satis_tl > 0:
                     k_marj = 100
+                else:
+                    k_marj = 0
+
+                if kid is not None:
+                    self._item_currency_map[int(kid)] = pb
 
                 formatted_items.append({
-                    "id": k.get("id"),
+                    "id": kid,
                     "malzeme_adi": k.get("malzeme_adi", "Tanımsız Malzeme"),
                     "miktar": f"{mik:g}",
                     "birim": k.get("birim", "Adet"),
-                    "birim_satis_val": str(b_satis) if b_satis > 0 else "",
-                    "birim_maliyet_val": str(b_maliyet) if b_maliyet > 0 else "",
-                    "toplam_satis_str": f"{toplam_satis:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
-                    "toplam_maliyet_str": f"{toplam_maliyet:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
-                    "kar_marji_str": f"%{k_marj}"
+                    "birim_satis_val": f"{b_satis_tl:.2f}" if b_satis_tl > 0 else "",
+                    "birim_maliyet_val": f"{b_maliyet_tl:.2f}" if b_maliyet_tl > 0 else "",
+                    "toplam_satis_str": f"{toplam_satis_tl:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
+                    "toplam_maliyet_str": f"{toplam_maliyet_tl:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
+                    "kar_marji_str": f"%{k_marj}",
+                    "para_birimi": pb,
+                    "birim_satis_orj": b_satis_ham,
                 })
             self.items = formatted_items
         else:
             self.items = []
             self.audit_logs = []
+            self._item_currency_map = {}
 
     def set_edit_musteri(self, val: str):
         self.edit_musteri = val
@@ -151,14 +225,21 @@ class QuoteEditState(GlobalState):
     def set_edit_konu(self, val: str):
         self.edit_konu = val
 
+    # ---------------------------------------------------------------
+    # DÜZENLEME: Idempotent
+    # ---------------------------------------------------------------
     async def update_item_sale(self, kalem_id: int, new_sale_str: str):
-        """Kullanıcı kalemin birim satış fiyatını değiştirdiğinde çalışır."""
-        try:
-            val = float(new_sale_str.replace(",", ".").strip() or 0.0)
-        except ValueError:
-            val = 0.0
+        val_tl = self._parse_number(new_sale_str)
 
-        yeni_toplam_satis = update_kalem_satis(kalem_id, val, self.current_code)
+        mevcut_tl = self._find_item_current_tl(kalem_id, "birim_satis_val")
+        if abs(val_tl - mevcut_tl) < 0.005:
+            return
+
+        pb = self._item_currency_map.get(int(kalem_id), "TRY")
+        rate = self._rate_for(pb)
+        val_orj = val_tl / rate if rate > 0 else val_tl
+
+        yeni_toplam_satis = update_kalem_satis(int(kalem_id), val_orj, self.current_code)
         self.edit_satis = f"{yeni_toplam_satis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         self.load_selected_quote_details(self.selected_quote_label)
 
@@ -171,13 +252,17 @@ class QuoteEditState(GlobalState):
         yield rx.toast.success("Kalem satış fiyatı güncellendi.", position="bottom-right")
 
     async def update_item_cost(self, kalem_id: int, new_cost_str: str):
-        """Kullanıcı kalemin birim maliyetini değiştirdiğinde çalışır."""
-        try:
-            val = float(new_cost_str.replace(",", ".").strip() or 0.0)
-        except ValueError:
-            val = 0.0
+        val_tl = self._parse_number(new_cost_str)
 
-        yeni_toplam_maliyet = update_kalem_maliyet(kalem_id, val, self.current_code)
+        mevcut_tl = self._find_item_current_tl(kalem_id, "birim_maliyet_val")
+        if abs(val_tl - mevcut_tl) < 0.005:
+            return
+
+        pb = self._item_currency_map.get(int(kalem_id), "TRY")
+        rate = self._rate_for(pb)
+        val_orj = val_tl / rate if rate > 0 else val_tl
+
+        yeni_toplam_maliyet = update_kalem_maliyet(int(kalem_id), val_orj, self.current_code)
         self.edit_maliyet = f"{yeni_toplam_maliyet:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         self.load_selected_quote_details(self.selected_quote_label)
 
@@ -194,12 +279,8 @@ class QuoteEditState(GlobalState):
             yield rx.toast.error("İşlem yapılacak teklif bulunamadı.", position="top-right")
             return
 
-        try:
-            satis_val = float(self.edit_satis.replace(".", "").replace(",", ".").replace("₺", "").strip() or 0.0)
-            maliyet_val = float(self.edit_maliyet.replace(".", "").replace(",", ".").replace("₺", "").strip() or 0.0)
-        except ValueError:
-            yield rx.toast.error("Lütfen tutarları geçerli bir sayı olarak girin.", position="top-right")
-            return
+        satis_val = self._parse_number(self.edit_satis)
+        maliyet_val = self._parse_number(self.edit_maliyet)
 
         update_teklif_meta(
             teklif_kodu=self.current_code,

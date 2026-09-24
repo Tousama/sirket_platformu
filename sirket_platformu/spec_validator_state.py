@@ -4,11 +4,11 @@ import reflex as rx
 from typing import List, Dict, Any
 from .dashboard_state import DashboardState
 from .shared_quotes import SHARED_QUOTES
+from .services.spec_analyzer import SpecAnalyzerEngine
 from .datasheet_service import (
     REGISTERED_DATASHEETS, 
     parse_multipage_pdf_datasheets, 
     get_compatible_devices_for_item,
-    detect_measurement_discipline
 )
 
 try:
@@ -74,7 +74,18 @@ def clean_and_structure_spec_text(raw_text: str) -> str:
 
 class SpecValidatorState(rx.State):
     currency: str = "TRY (₺)"
-
+    
+    # Kullanıcının düzenlediği ve analiz edilen tek şartname metni
+    spec_text: str = (
+        "• Seviye Ölçer: 80 GHz Temassız Radar, IP66, ATEX Zone 1 IIB T4, 24VDC, 4-20mA HART.\n"
+        "• Basınç Transmitteri: IP67, ATEX Zone 1, 24VDC, 4-20mA HART, 316L gövde.\n"
+        "• Ortam sıcaklığı max 55°C."
+    )
+    
+    is_analyzing: bool = False
+    extracted_specs: Dict[str, Any] = {}
+    validation_results: List[Dict[str, str]] = []
+    
     teklif_secenekleri: List[str] = []
     secilen_teklif: str = ""
     _quotes_map: Dict[str, Any] = {}
@@ -82,20 +93,77 @@ class SpecValidatorState(rx.State):
     is_datasheet_uploading: bool = False
     son_yuklenen_datasheet: str = ""
 
-    sartname_metni: str = (
-        "• Seviye Ölçer (LIT): FMCW Radar 80 GHz, temassız, SIL2, 4-20mA HART, alüminyum IP66/68 gövde, ATEX Ex d [ia Ga] IIB T6.\n"
-        "• Seviye Switchi (LS): Titreşimli çatal, 316L, SIL2, ATEX Ex ia Zone 1, Sinyal Değerlendirme Ünitesi (Nivotester/Bariyer) dahil."
-    )
-
     datasheet_listesi: List[Dict[str, str]] = []
     matrix_rows: List[Dict[str, Any]] = []
 
-    is_analyzing: bool = False
+    # Şartnameyle mukayese edilecek cihaz havuzu
+    cihaz_secenekleri: List[str] = [
+        "PT-101 (Endress+Hauser Basınç Transmitteri)",
+        "LT-201 (VEGAPULS 6X Radar Seviye Ölçer)",
+        "LS-301 (VEGASWING 61 Titreşimli Switch)",
+        "STD-01 (Standart Non-Ex IP54 Sensör)"
+    ]
+    secilen_cihaz_etiketi: str = "PT-101 (Endress+Hauser Basınç Transmitteri)"
+
+    cihaz_veritabani: Dict[str, Dict[str, Any]] = {
+        "PT-101 (Endress+Hauser Basınç Transmitteri)": {
+            "name": "Endress+Hauser Cerabar PMP71B",
+            "ip_rating": 67,
+            "is_atex": True,
+            "max_temp": 80,
+            "voltage": "24VDC",
+            "protocol": "4-20MA HART",
+            "body_material": "AISI 316L SS"
+        },
+        "LT-201 (VEGAPULS 6X Radar Seviye Ölçer)": {
+            "name": "VEGAPULS 6X Radar",
+            "ip_rating": 68,
+            "is_atex": True,
+            "max_temp": 70,
+            "voltage": "24VDC",
+            "protocol": "4-20MA HART",
+            "body_material": "Alüminyum"
+        },
+        "LS-301 (VEGASWING 61 Titreşimli Switch)": {
+            "name": "VEGASWING 61 Seviye Şalteri",
+            "ip_rating": 66,
+            "is_atex": True,
+            "max_temp": 60,
+            "voltage": "24VDC",
+            "protocol": "Röle Çıkış",
+            "body_material": "AISI 316L SS"
+        },
+        "STD-01 (Standart Non-Ex IP54 Sensör)": {
+            "name": "Standart Endüstriyel Sensör",
+            "ip_rating": 54,
+            "is_atex": False,
+            "max_temp": 45,
+            "voltage": "230VAC",
+            "protocol": "Modbus RTU",
+            "body_material": "Plastik"
+        }
+    }
+
     is_uploading: bool = False
     yuklenen_dosya_adi: str = ""
 
-    def set_sartname_metni(self, val: str):
-        self.sartname_metni = val
+    @rx.var
+    def selected_equipment(self) -> Dict[str, Any]:
+        return self.cihaz_veritabani.get(
+            self.secilen_cihaz_etiketi, 
+            self.cihaz_veritabani["PT-101 (Endress+Hauser Basınç Transmitteri)"]
+        )
+
+    @rx.var
+    def active_spec_text(self) -> str:
+        return self.spec_text
+
+    def set_secilen_cihaz(self, val: str):
+        self.secilen_cihaz_etiketi = val
+        self.run_spec_analysis()
+
+    def set_spec_text(self, val: str):
+        self.spec_text = val
 
     def set_currency(self, val: Any):
         if isinstance(val, list) and len(val) > 0:
@@ -105,6 +173,7 @@ class SpecValidatorState(rx.State):
 
     async def on_load(self):
         await self.load_quotes()
+        self.run_spec_analysis()
         async for _ in self.validate_bom_items():
             pass
 
@@ -174,7 +243,6 @@ class SpecValidatorState(rx.State):
         return rx.toast.info(f"'{dosya_adi}' havuzdan kaldırıldı.", position="top-right")
 
     def clear_all_datasheets(self):
-        """Tüm havuzu sıfırlar."""
         self.datasheet_listesi = []
         REGISTERED_DATASHEETS.clear()
         return rx.toast.info("Datasheet havuzu temizlendi.", position="top-right")
@@ -256,8 +324,11 @@ class SpecValidatorState(rx.State):
 
             structured_spec = clean_and_structure_spec_text(raw_text)
             if structured_spec:
-                self.sartname_metni = structured_spec
-                yield rx.toast.success(f"'{file.name}' ayrıştırıldı ve düzenlendi!", position="top-right")
+                self.spec_text = structured_spec
+                self.run_spec_analysis()
+                async for _ in self.validate_bom_items():
+                    pass
+                yield rx.toast.success(f"'{file.name}' şartnamesi yüklendi ve analiz edildi!", position="top-right")
             else:
                 yield rx.toast.warning("Dosyadan şartname maddesi çıkarılamadı.", position="top-right")
         except Exception as e:
@@ -266,19 +337,29 @@ class SpecValidatorState(rx.State):
         self.is_uploading = False
 
     async def format_current_text(self):
-        if self.sartname_metni.strip():
-            self.sartname_metni = clean_and_structure_spec_text(self.sartname_metni)
+        if self.spec_text.strip():
+            self.spec_text = clean_and_structure_spec_text(self.spec_text)
             yield rx.toast.info("Şartname metni düzenlendi.", position="top-right")
 
+    def run_spec_analysis(self):
+        """Metin alanındaki şartname ile seçili cihazı karşılaştırır."""
+        self.is_analyzing = True
+        self.extracted_specs = SpecAnalyzerEngine.extract_spec_parameters(self.spec_text)
+        self.validation_results = SpecAnalyzerEngine.validate_equipment(
+            self.extracted_specs, 
+            self.selected_equipment
+        )
+        self.is_analyzing = False
+
     async def validate_bom_items(self):
-        """
-        Her ürün kategorisini yalnızca kendi muadili olan cihazlarla eşleştirir.
-        İsimleri tekilleştirir ve temiz teknik analiz tablosu üretir.
-        """
+        """Girilen şartname metnindeki koşullarla BOM tablosundaki cihazları dinamik kıyaslar."""
         self.is_analyzing = True
         yield
 
-        metin = self.sartname_metni.lower()
+        # Şartname metnindeki gerçek gereksinimleri çıkar
+        spec_rules = SpecAnalyzerEngine.extract_spec_parameters(self.spec_text)
+        metin = self.spec_text.lower()
+
         kalemler = []
         if self.secilen_teklif in self._quotes_map:
             kalemler = self._quotes_map[self.secilen_teklif].get("kalemler", [])
@@ -289,6 +370,7 @@ class SpecValidatorState(rx.State):
             kalemler = [
                 {"malzeme_adi": "VEGAPULS 6X (Radar Seviye Transmitteri)", "tanim": "Radar"},
                 {"malzeme_adi": "VEGASWING 61 (Titreşimli Seviye Switchi)", "tanim": "Switch"},
+                {"malzeme_adi": "Rosemount 3051S Basınç Transmitteri", "tanim": "Transmitter"},
             ]
 
         rows = []
@@ -296,8 +378,6 @@ class SpecValidatorState(rx.State):
 
         for k in kalemler:
             kalem_adi = k.get("malzeme_adi") or k.get("tanim") or "Ekipman"
-            
-            # Yalnızca bu kalemin disiplinine (radar, switch) uyan cihazları çek
             compatible_devices = get_compatible_devices_for_item(kalem_adi)
 
             if compatible_devices:
@@ -307,45 +387,55 @@ class SpecValidatorState(rx.State):
                     ds_adi = dev.get("datasheet_dosyasi", "Föy")
                     params = dev.get("teknik_parametreler", {})
 
-                    # Aynı cihazı mükerrer basma
                     if model in islenmis_modeller:
                         continue
                     islenmis_modeller.add(model)
 
-                    # Görsel kirliliği önleyen sade ve net ürün başlığı:
                     ekipman_etiketi = f"{brand} - {model}"
-
                     notlar = []
-                    uygun = True
+                    is_compatible = True
 
-                    # 1. Radar Frekansı
-                    if "radar" in dev.get("kategori", ""):
-                        if "80 ghz" in metin or "80ghz" in metin:
-                            notlar.append("80 GHz FMCW Radar")
-                    # 2. Switch Tipi
-                    elif "switch" in dev.get("kategori", ""):
-                        notlar.append("Titreşimli Çatal Seviye Şalteri")
-
-                    # Koruma Sınıfı
+                    # 1. IP Koruma Kontrolü
                     ds_ip = params.get("koruma_sinifi", "IP66/68")
-                    notlar.append(f"Gövde: {ds_ip}")
+                    if spec_rules.get("ip_rating"):
+                        req_ip = spec_rules["ip_rating"]
+                        ip_match = re.search(r"(\d{2})", ds_ip)
+                        dev_ip = int(ip_match.group(1)) if ip_match else 65
+                        if dev_ip < req_ip:
+                            notlar.append(f"KORUMA YETERSİZ (İstenen: IP{req_ip}, Cihaz: {ds_ip})")
+                            is_compatible = False
+                        else:
+                            notlar.append(f"IP Uygun ({ds_ip})")
+                    else:
+                        notlar.append(f"Gövde: {ds_ip}")
 
-                    # Ex-Proof
+                    # 2. ATEX Kontrolü
                     ds_ex = params.get("ex_proof", "ATEX Onaylı")
-                    notlar.append(f"Ex-Proof: {ds_ex}")
+                    if spec_rules.get("is_atex_required"):
+                        if "atex" in ds_ex.lower() or "ex" in ds_ex.lower():
+                            notlar.append("ATEX Zone 1/2 Uyumlu")
+                        else:
+                            notlar.append("ATEX EKSİK (Non-Ex Cihaz)")
+                            is_compatible = False
+                    else:
+                        notlar.append(f"Sertifika: {ds_ex}")
 
-                    # Çıkış Sinyali
-                    ds_sig = params.get("cikis_sinyali", "")
-                    notlar.append(f"Sinyal: {ds_sig}")
-
-                    # Mekanik Bağlantı
-                    ds_conn = params.get("proses_baglantisi", "")
-                    notlar.append(f"Bağlantı: {ds_conn}")
+                    # 3. Sinyal Tipi
+                    ds_sig = params.get("cikis_sinyali", "4-20 mA HART")
+                    if spec_rules.get("protocol"):
+                        req_proto = spec_rules["protocol"].upper()
+                        if req_proto in ds_sig.upper():
+                            notlar.append(f"Sinyal Uyumlu ({ds_sig})")
+                        else:
+                            notlar.append(f"Sinyal Uyuşmazlığı: Şartname {req_proto} istiyor")
+                            is_compatible = False
+                    else:
+                        notlar.append(f"Sinyal: {ds_sig}")
 
                     rows.append({
                         "ekipman": ekipman_etiketi,
                         "datasheet": ds_adi,
-                        "uygunluk": "Uygun",
+                        "uygunluk": "Uygun" if is_compatible else "İnceleme Gerekli",
                         "aciklama": " | ".join(notlar),
                     })
             else:
@@ -358,4 +448,4 @@ class SpecValidatorState(rx.State):
 
         self.matrix_rows = rows
         self.is_analyzing = False
-        yield rx.toast.success(f"{len(rows)} cihaz başarıyla doğrulandı.", position="top-right")
+        yield rx.toast.success("Şartname gereksinimleri tüm cihazlara uygulandı.", position="top-right")

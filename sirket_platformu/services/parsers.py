@@ -139,6 +139,11 @@ def extract_pdf_full(pdf_file):
 
     tam_metin = "\n".join(raw_pages_text)
 
+    # =========================================================
+    # YENİ: Belgenin kendi para birimini tespit et
+    # =========================================================
+    belge_pb, belge_sembol = detect_currency_and_symbol(tam_metin)
+
     for l in tam_metin.split("\n"):
       l_strip = l.strip()
       l_low = l_strip.lower()
@@ -268,7 +273,6 @@ def extract_pdf_full(pdf_file):
         )
         tanim = re.sub(r"\s+", " ", tanim).strip()
 
-        # KESİN KONTROL: Tanım yoksa veya sayısal değilse atla
         if not tanim or not re.search(r"[A-Za-zçğıöşüÇĞİÖŞÜ]", tanim):
           continue
 
@@ -304,25 +308,37 @@ def extract_pdf_full(pdf_file):
         if toplam_tl == 0.0 and nums:
           toplam_tl = nums[-1]
 
-        # KESİN FİLTRE: Toplamı veya miktarı 0 olan boş satırları kesinlikle ekleme!
         if toplam_tl <= 0 or mik <= 0:
           continue
 
-        malz_tl = round(malz_birim_eur * kur_eur, 2)
-        birlesik_birim_tl = round(malz_tl + iscilik_birim_tl, 2)
-
-        if birlesik_birim_tl == 0.0 and toplam_tl > 0:
-          birlesik_birim_tl = round(toplam_tl / mik, 2)
+        # =========================================================
+        # YENİ: Belge para birimine göre kalem tutarını hesapla
+        # =========================================================
+        if belge_pb == "TRY":
+          # Mevcut davranış: kalem tutarları TL'ye çevrilir, final TL
+          malz_tl = round(malz_birim_eur * kur_eur, 2)
+          birlesik_birim = round(malz_tl + iscilik_birim_tl, 2)
+          if birlesik_birim == 0.0 and toplam_tl > 0:
+            birlesik_birim = round(toplam_tl / mik, 2)
+          kalem_toplam = toplam_tl
+          kalem_pb = "TRY"
+        else:
+          # Yeni davranış: kalem tutarları döviz olarak bırakılır
+          birlesik_birim = round(malz_birim_eur + iscilik_birim_tl, 2)
+          if birlesik_birim == 0.0 and toplam_tl > 0:
+            birlesik_birim = round(toplam_tl / mik, 2)
+          kalem_toplam = toplam_tl
+          kalem_pb = belge_pb
 
         kalemler.append({
             "malzeme_adi": tanim,
             "miktar": mik,
             "birim": birim,
-            "birim_satis": birlesik_birim_tl,
-            "birim_fiyat": birlesik_birim_tl,
-            "toplam": toplam_tl,
-            "toplam_tl": toplam_tl,
-            "para_birimi": "TRY",
+            "birim_satis": birlesik_birim,
+            "birim_fiyat": birlesik_birim,
+            "toplam": kalem_toplam,
+            "toplam_tl": kalem_toplam,
+            "para_birimi": kalem_pb,
             "birim_maliyet": 0.0,
             "maliyet_pb": "TRY",
         })
@@ -349,7 +365,7 @@ def extract_pdf_full(pdf_file):
         "toplam_tutar": teklif_toplam_tl,
         "satis_try": teklif_toplam_tl,
         "maliyet_try": 0.0,
-        "para_birimi": "TRY",
+        "para_birimi": belge_pb,   # ← Artık dinamik
         "kalemler": kalemler,
         "tam_metin": tam_metin,
     }
@@ -391,6 +407,20 @@ def extract_excel_full_with_cost_sheets(
 
   if not excel_sheets:
     return sonuc
+
+  # =========================================================
+  # YENİ: Excel belgesinin para birimini tüm hücrelerden tespit et
+  # =========================================================
+  try:
+    tum_metin_parts = []
+    for df_x in excel_sheets.values():
+      for v in df_x.values.flatten():
+        if pd.notna(v) and str(v).strip():
+          tum_metin_parts.append(str(v))
+    tam_metin_excel = " ".join(tum_metin_parts)
+    belge_pb, belge_sembol = detect_currency_and_symbol(tam_metin_excel)
+  except Exception:
+    belge_pb, belge_sembol = "TRY", "₺"
 
   satis_sheet_name = None
   df_satis = None
@@ -663,25 +693,35 @@ def extract_excel_full_with_cost_sheets(
         if nums:
           toplam_tl = nums[-1]
 
-      # KESİN FİLTRE: Toplamı veya miktarı 0 olan boş satırları Excel'de de atla
       if toplam_tl <= 0 or mik <= 0:
         continue
 
-      malz_tl = round(malz_birim_eur * kur_eur, 2)
-      birlesik_birim_tl = round(malz_tl + iscilik_birim_tl, 2)
-
-      if birlesik_birim_tl == 0.0 and toplam_tl > 0:
-        birlesik_birim_tl = round(toplam_tl / mik, 2)
+      # =========================================================
+      # YENİ: Belge para birimine göre kalem tutarını hesapla
+      # =========================================================
+      if belge_pb == "TRY":
+        malz_tl = round(malz_birim_eur * kur_eur, 2)
+        birlesik_birim = round(malz_tl + iscilik_birim_tl, 2)
+        if birlesik_birim == 0.0 and toplam_tl > 0:
+          birlesik_birim = round(toplam_tl / mik, 2)
+        kalem_toplam = toplam_tl
+        kalem_pb = "TRY"
+      else:
+        birlesik_birim = round(malz_birim_eur + iscilik_birim_tl, 2)
+        if birlesik_birim == 0.0 and toplam_tl > 0:
+          birlesik_birim = round(toplam_tl / mik, 2)
+        kalem_toplam = toplam_tl
+        kalem_pb = belge_pb
 
       kalemler.append({
           "malzeme_adi": tanim,
           "miktar": mik,
           "birim": birim,
-          "birim_satis": birlesik_birim_tl,
-          "birim_fiyat": birlesik_birim_tl,
-          "toplam": toplam_tl,
-          "toplam_tl": toplam_tl,
-          "para_birimi": "TRY",
+          "birim_satis": birlesik_birim,
+          "birim_fiyat": birlesik_birim,
+          "toplam": kalem_toplam,
+          "toplam_tl": kalem_toplam,
+          "para_birimi": kalem_pb,
           "birim_maliyet": 0.0,
           "maliyet_pb": "TRY",
       })
@@ -724,7 +764,7 @@ def extract_excel_full_with_cost_sheets(
   sonuc["satis_try"] = teklif_toplam_tl
   sonuc["maliyet_try"] = round(teklif_toplam_tl * 0.70, 2)
   sonuc["kalemler"] = kalemler
-  sonuc["para_birimi"] = "TRY"
+  sonuc["para_birimi"] = belge_pb   # ← Artık dinamik
 
   if maliyet_eslesen_adet > 0:
     sonuc["maliyet_sayfasi_bulundu"] = True

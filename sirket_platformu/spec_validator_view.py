@@ -3,6 +3,16 @@ from .spec_validator_state import SpecValidatorState
 from .quote_builder import sidebar
 
 
+def discrepancy_badge(level: str):
+    return rx.match(
+        level,
+        ("danger", rx.badge("Kritik Uyumsuzluk", color_scheme="red", variant="solid")),
+        ("warning", rx.badge("Teknik Sapma", color_scheme="orange", variant="solid")),
+        ("success", rx.badge("Uygun", color_scheme="green", variant="solid")),
+        rx.badge("Uygun", color_scheme="green", variant="soft"),
+    )
+
+
 def spec_status_badge(uygunluk: str) -> rx.Component:
     return rx.match(
         uygunluk,
@@ -37,7 +47,6 @@ def spec_status_badge(uygunluk: str) -> rx.Component:
 
 
 def datasheet_library_card() -> rx.Component:
-    """Kullanıcının datasheet yükleyebileceği ve kayıtlı föyleri görebileceği kart tasarımı"""
     return rx.card(
         rx.vstack(
             rx.hstack(
@@ -55,7 +64,6 @@ def datasheet_library_card() -> rx.Component:
                 ),
                 rx.spacer(),
                 rx.hstack(
-                    # Havuzu Temizle Butonu
                     rx.button(
                         rx.icon("trash", size=13),
                         "Havuzu Temizle",
@@ -64,7 +72,6 @@ def datasheet_library_card() -> rx.Component:
                         size="1",
                         on_click=SpecValidatorState.clear_all_datasheets,
                     ),
-                    # Datasheet PDF Yükleme Butonu
                     rx.upload(
                         rx.hstack(
                             rx.icon("upload", size=14, color="#34d399"),
@@ -98,7 +105,6 @@ def datasheet_library_card() -> rx.Component:
                 border_bottom="1px solid #151e33",
             ),
             
-            # Kayıtlı Datasheetler Tablosu
             rx.cond(
                 SpecValidatorState.datasheet_sayisi > 0,
                 rx.table.root(
@@ -166,297 +172,143 @@ def datasheet_library_card() -> rx.Component:
 
 
 def spec_validator_main() -> rx.Component:
-    return rx.box(
-        rx.vstack(
-            # 1. Üst Header Barı
-            rx.hstack(
-                rx.hstack(
-                    rx.icon("menu", size=18, color="#94a3b8", cursor="pointer"),
-                    rx.icon("file-text", size=16, color="#cbd5e1"),
-                    rx.heading(
-                        "Teknik Şartname & Datasheet Doğrulayıcı",
-                        size="4",
-                        color="#ffffff",
-                        font_weight="700",
-                    ),
-                    rx.text("/", color="#475569"),
-                    rx.text("PetroTek Engineering", color="#94a3b8", font_size="13px"),
-                    spacing="2",
-                    align_items="center",
-                ),
-                rx.spacer(),
-                rx.hstack(
-                    rx.segmented_control.root(
-                        rx.segmented_control.item("TRY (₺)", value="TRY (₺)"),
-                        rx.segmented_control.item("USD ($)", value="USD ($)"),
-                        rx.segmented_control.item("EUR (€)", value="EUR (€)"),
-                        value=SpecValidatorState.currency,
-                        on_change=SpecValidatorState.set_currency,
-                        radius="full",
-                        size="1",
-                    ),
-                    rx.button(
-                        rx.icon("plus", size=15),
-                        "Yeni Teklif",
-                        color_scheme="blue",
-                        size="2",
-                        radius="full",
-                        on_click=rx.redirect("/teklif-hazirla"),
-                    ),
-                    rx.icon_button(
-                        rx.icon("bell", size=16),
-                        variant="ghost",
-                        color_scheme="gray",
-                        size="2",
-                    ),
-                    spacing="3",
-                    align_items="center",
-                ),
-                width="100%",
-                padding_bottom="16px",
-                border_bottom="1px solid #151e33",
-            ),
-
-            # 2. Modül Başlığı ve Teklif Seçici
-            rx.hstack(
-                rx.vstack(
-                    rx.hstack(
-                        rx.icon("file-text", size=18, color="#ffffff"),
-                        rx.text(
-                            "Tek Tıkla Şartname & Teknik Föy Uygunluk Doğrulayıcı",
-                            font_size="16px",
-                            font_weight="800",
-                            color="#ffffff",
-                            letter_spacing="-0.01em",
-                        ),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    rx.text(
-                        "Müşteri teknik şartnamesini teklif BOM açıklamalarıyla tarayıp Teknik Uygunluk & Sapma Tablosu (Compliance Matrix) üretin.",
-                        font_size="12.5px",
-                        color="#94a3b8",
-                    ),
-                    align_items="start",
-                    spacing="1",
-                ),
-                rx.spacer(),
-                rx.hstack(
-                    rx.text("Aktif Teklif / BOM:", font_size="12px", color="#94a3b8", font_weight="600"),
-                    rx.select(
-                        SpecValidatorState.teklif_secenekleri,
-                        value=SpecValidatorState.secilen_teklif,
-                        on_change=SpecValidatorState.set_secilen_teklif,
-                        size="2",
-                        radius="medium",
-                        color_scheme="blue",
-                        width="240px",
-                    ),
-                    align_items="center",
-                    spacing="2",
-                    background="#0a1020",
-                    padding="6px 12px",
-                    border_radius="8px",
-                    border="1px solid #151e33",
-                ),
-                width="100%",
-                align_items="center",
-                padding_y="4px",
-            ),
-
-            # 3. Şartname Giriş Kartı
+    return rx.vstack(
+        rx.heading("Teknik Şartname & Sapma Doğrulayıcı", size="6", color="#ffffff"),
+        rx.text(
+            "Müşteri teknik şartnamesini girin; seçtiğiniz teklif kalemlerinin ve fabrika datasheet'lerinin uyumluluğunu denetleyin.",
+            color="#94a3b8",
+            size="2",
+        ),
+        
+        # Üst Panel: Şartname Girişi ve Cihaz Seçici
+        rx.grid(
             rx.card(
                 rx.vstack(
+                    rx.text("Şartname Metni:", font_size="12px", font_weight="700", color="#ffffff"),
+                    rx.text_area(
+                        placeholder="Şartname gereksinimlerini buraya yapıştırın...",
+                        value=SpecValidatorState.spec_text,
+                        on_change=SpecValidatorState.set_spec_text,
+                        width="100%",
+                        height="130px",
+                        background="#070c18",
+                        border="1px solid #1e293b",
+                        color="#f1f5f9",
+                        font_size="12px",
+                    ),
                     rx.hstack(
-                        rx.text(
-                            "ŞARTNAME METNİ / MADDELERİ",
-                            font_size="11px",
-                            font_weight="800",
-                            color="#38bdf8",
-                            letter_spacing="0.04em",
+                        rx.button(
+                            rx.hstack(
+                                rx.icon("scan-search", size=15),
+                                rx.text("Şartnameyi Doğrula"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            on_click=[
+                                SpecValidatorState.run_spec_analysis,
+                                SpecValidatorState.validate_bom_items,
+                            ],
+                            loading=SpecValidatorState.is_analyzing,
+                            color_scheme="blue",
+                            size="2",
                         ),
                         rx.spacer(),
-                        rx.hstack(
-                            rx.button(
-                                rx.icon("sparkles", size=13),
-                                "Metni Düzenle",
-                                variant="ghost",
-                                color_scheme="cyan",
-                                size="1",
-                                on_click=SpecValidatorState.format_current_text,
+                        rx.upload(
+                            rx.hstack(
+                                rx.icon("file-up", size=14, color="#38bdf8"),
+                                rx.text("Şartname Dosyası Yükle", font_size="11.5px", color="#38bdf8"),
+                                spacing="1",
+                                align_items="center",
                             ),
-                            rx.upload(
-                                rx.hstack(
-                                    rx.icon("upload-cloud", size=14, color="#38bdf8"),
-                                    rx.text(
-                                        rx.cond(
-                                            SpecValidatorState.yuklenen_dosya_adi != "",
-                                            SpecValidatorState.yuklenen_dosya_adi,
-                                            "Şartname Yükle (PDF / Word)",
-                                        ),
-                                        font_size="11.5px",
-                                        font_weight="600",
-                                        color="#cbd5e1",
-                                    ),
-                                    spacing="2",
-                                    align_items="center",
-                                ),
-                                id="spec_upload_box",
-                                border="1px dashed #38bdf8",
-                                padding="4px 12px",
-                                border_radius="6px",
-                                background="rgba(56, 189, 248, 0.05)",
-                                cursor="pointer",
-                                on_drop=SpecValidatorState.handle_file_upload(rx.upload_files(upload_id="spec_upload_box")),
-                            ),
-                            spacing="2",
-                            align_items="center",
+                            id="spec_file_upload",
+                            border="1px dashed #0284c7",
+                            padding="4px 12px",
+                            border_radius="6px",
+                            background="rgba(2, 132, 199, 0.08)",
+                            cursor="pointer",
+                            on_drop=SpecValidatorState.handle_file_upload(rx.upload_files(upload_id="spec_file_upload")),
                         ),
                         width="100%",
                         align_items="center",
                     ),
-                    rx.text_area(
-                        value=SpecValidatorState.sartname_metni,
-                        on_change=SpecValidatorState.set_sartname_metni,
-                        placeholder="Müşteri şartnamesi maddelerini buraya yapıştırın veya sağ üstten dosya yükleyin...",
-                        height="125px",
-                        width="100%",
-                        background="#070c18",
-                        border="1px solid #1e293b",
-                        border_radius="8px",
-                        color="#f1f5f9",
-                        font_size="12.5px",
-                        line_height="1.6",
-                        padding="12px 14px",
-                    ),
-                    rx.button(
-                        "BOM Kalemlerini Şartnameye Göre Doğrula",
-                        loading=SpecValidatorState.is_analyzing,
-                        on_click=SpecValidatorState.validate_bom_items,
-                        background="#0284c7",
-                        color="#ffffff",
-                        font_size="13px",
-                        font_weight="700",
-                        border_radius="8px",
-                        padding_x="18px",
-                        padding_y="10px",
-                        cursor="pointer",
-                        _hover={"background": "#0369a1"},
-                    ),
-                    spacing="3",
-                    align_items="start",
+                    spacing="2",
                     width="100%",
                 ),
                 background="#0a1020",
                 border="1px solid #151e33",
-                border_radius="14px",
-                padding="20px 24px",
-                width="100%",
+                padding="16px",
             ),
 
-            # 4. Kayıtlı Datasheet Havuzu Kartı
-            datasheet_library_card(),
-
-            # 5. Teknik Uygunluk & Sapma Matrisi Kartı
             rx.card(
                 rx.vstack(
-                    rx.hstack(
-                        rx.text(
-                            "Teknik Uygunluk & Sapma Matrisi (Compliance Matrix)",
-                            font_size="13.5px",
-                            font_weight="700",
-                            color="#ffffff",
-                        ),
-                        rx.spacer(),
-                        rx.hstack(
-                            rx.text(
-                                f"{SpecValidatorState.uygun_sayisi} Uygun",
-                                font_size="13px",
-                                font_weight="700",
-                                color="#4ade80",
-                            ),
-                            rx.text("|", color="#475569", font_weight="600"),
-                            rx.text(
-                                f"{SpecValidatorState.inceleme_sayisi} İnceleme Gerekli",
-                                font_size="13px",
-                                font_weight="700",
-                                color="#4ade80",
-                            ),
-                            spacing="2",
-                            align_items="center",
-                        ),
+                    rx.text("Doğrulanacak Cihazı Seçin:", font_size="12px", font_weight="700", color="#ffffff"),
+                    rx.select(
+                        SpecValidatorState.cihaz_secenekleri,
+                        value=SpecValidatorState.secilen_cihaz_etiketi,
+                        on_change=SpecValidatorState.set_secilen_cihaz,
+                        size="2",
                         width="100%",
-                        padding_bottom="10px",
-                        border_bottom="1px solid #151e33",
                     ),
-
+                    rx.box(
+                        rx.vstack(
+                            rx.text(SpecValidatorState.selected_equipment["name"], font_size="12px", font_weight="700", color="#ffffff"),
+                            rx.hstack(
+                                rx.badge(f"IP{SpecValidatorState.selected_equipment['ip_rating']}", color_scheme="green", size="1"),
+                                rx.cond(
+                                    SpecValidatorState.selected_equipment["is_atex"],
+                                    rx.badge("ATEX Zone 1/2", color_scheme="orange", size="1"),
+                                    rx.badge("Non-Ex", color_scheme="gray", size="1"),
+                                ),
+                                rx.badge(SpecValidatorState.selected_equipment["voltage"], color_scheme="blue", size="1"),
+                                rx.badge(SpecValidatorState.selected_equipment["protocol"], color_scheme="purple", size="1"),
+                                spacing="2",
+                            ),
+                            spacing="1",
+                        ),
+                        background="#070c18",
+                        border="1px solid #1e293b",
+                        border_radius="8px",
+                        padding="10px 12px",
+                        width="100%",
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                background="#0a1020",
+                border="1px solid #151e33",
+                padding="16px",
+            ),
+            columns="2",
+            spacing="4",
+            width="100%",
+        ),
+        
+        # Sonuç Paneli: Seçilen Cihaza Özel Parametrik Uyumsuzluklar
+        rx.cond(
+            SpecValidatorState.validation_results.length() > 0,
+            rx.card(
+                rx.vstack(
+                    rx.heading("Seçili Cihaz İçin Parametre Doğrulama Raporu", size="4", color="#ffffff"),
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(
-                                rx.table.column_header_cell(
-                                    "TEKLİF EDİLEN EKİPMAN",
-                                    color="#94a3b8",
-                                    font_size="11px",
-                                    font_weight="700",
-                                    width="28%",
-                                ),
-                                rx.table.column_header_cell(
-                                    "REFERANS DATASHEET",
-                                    color="#94a3b8",
-                                    font_size="11px",
-                                    font_weight="700",
-                                    width="20%",
-                                ),
-                                rx.table.column_header_cell(
-                                    "UYGUNLUK",
-                                    color="#94a3b8",
-                                    font_size="11px",
-                                    font_weight="700",
-                                    width="14%",
-                                ),
-                                rx.table.column_header_cell(
-                                    "TEKNİK KARŞILAŞTIRMA & AÇIKLAMA",
-                                    color="#94a3b8",
-                                    font_size="11px",
-                                    font_weight="700",
-                                    width="38%",
-                                ),
+                                rx.table.column_header_cell("PARAMETRE", font_size="11px", color="#94a3b8"),
+                                rx.table.column_header_cell("DURUM", font_size="11px", color="#94a3b8"),
+                                rx.table.column_header_cell("MÜHENDİSLİK DETAYI", font_size="11px", color="#94a3b8"),
+                                rx.table.column_header_cell("KRİTİKLİK", font_size="11px", color="#94a3b8"),
                             )
                         ),
                         rx.table.body(
                             rx.foreach(
-                                SpecValidatorState.matrix_rows,
-                                lambda row: rx.table.row(
-                                    rx.table.cell(
-                                        rx.text(
-                                            row["ekipman"].to(str),
-                                            font_size="12.5px",
-                                            font_weight="700",
-                                            color="#ffffff",
-                                        )
-                                    ),
-                                    rx.table.cell(
-                                        rx.badge(
-                                            rx.icon("file-check", size=12),
-                                            row["datasheet"].to(str),
-                                            color_scheme="cyan",
-                                            variant="surface",
-                                            size="1",
-                                        )
-                                    ),
-                                    rx.table.cell(spec_status_badge(row["uygunluk"].to(str))),
-                                    rx.table.cell(
-                                        rx.text(
-                                            row["aciklama"].to(str),
-                                            font_size="12px",
-                                            color="#cbd5e1",
-                                            line_height="1.5",
-                                        )
-                                    ),
-                                    align="center",
+                                SpecValidatorState.validation_results,
+                                lambda item: rx.table.row(
+                                    rx.table.cell(rx.text(item["param"], font_weight="700", font_size="12px", color="#ffffff")),
+                                    rx.table.cell(rx.text(item["status"], font_size="12px", color="#cbd5e1")),
+                                    rx.table.cell(rx.text(item["detail"], font_size="12px", color="#94a3b8")),
+                                    rx.table.cell(discrepancy_badge(item["level"])),
                                     border_bottom="1px solid #151e33",
-                                    padding_y="12px",
-                                ),
+                                    padding_y="8px",
+                                )
                             )
                         ),
                         width="100%",
@@ -467,17 +319,69 @@ def spec_validator_main() -> rx.Component:
                 background="#0a1020",
                 border="1px solid #151e33",
                 border_radius="14px",
-                padding="20px 24px",
+                padding="16px",
                 width="100%",
             ),
-            spacing="3",
+        ),
+
+        # Teklif BOM & Datasheet Eşleşme Tablosu
+        rx.card(
+            rx.vstack(
+                rx.hstack(
+                    rx.icon("table-properties", size=18, color="#34d399"),
+                    rx.heading("Teklif Kalemleri Şartname Uygunluk Matrisi", size="4", color="#ffffff"),
+                    rx.spacer(),
+                    rx.button(
+                        rx.icon("refresh-cw", size=13),
+                        "Matrisi Güncelle",
+                        size="1",
+                        variant="surface",
+                        color_scheme="green",
+                        on_click=SpecValidatorState.validate_bom_items,
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("EKİPMAN TANIMI", font_size="11px", color="#94a3b8"),
+                            rx.table.column_header_cell("REFERANS DATASHEET", font_size="11px", color="#94a3b8"),
+                            rx.table.column_header_cell("UYGUNLUK", font_size="11px", color="#94a3b8"),
+                            rx.table.column_header_cell("MÜHENDİSLİK ANALİZ NOTU", font_size="11px", color="#94a3b8"),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            SpecValidatorState.matrix_rows,
+                            lambda row: rx.table.row(
+                                rx.table.cell(rx.text(row["ekipman"].to(str), font_size="12px", font_weight="700", color="#ffffff")),
+                                rx.table.cell(rx.text(row["datasheet"].to(str), font_size="11.5px", color="#38bdf8")),
+                                rx.table.cell(spec_status_badge(row["uygunluk"].to(str))),
+                                rx.table.cell(rx.text(row["aciklama"].to(str), font_size="11.5px", color="#94a3b8")),
+                                border_bottom="1px solid #151e33",
+                                padding_y="8px",
+                            )
+                        )
+                    ),
+                    width="100%",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            background="#0a1020",
+            border="1px solid #151e33",
+            border_radius="14px",
+            padding="18px 22px",
             width="100%",
         ),
-        padding="20px 32px",
-        flex="1",
-        overflow_y="auto",
-        height="100vh",
-        background="#030712",
+
+        # Kayıtlı Datasheet Havuzu Bileşeni
+        datasheet_library_card(),
+
+        spacing="4",
+        width="100%",
+        padding="20px",
     )
 
 

@@ -9,30 +9,26 @@ UPLOAD_ID = "quote_upload_input_id"
 def kalem_satiri(item: Dict[str, Any]) -> rx.Component:
     return rx.table.row(
         rx.table.cell(
-            rx.text(item["malzeme_adi"].to(str), font_size="13px", font_weight="600", color="#ffffff")
+            rx.tooltip(
+                rx.text(
+                    item["malzeme_adi"],
+                    font_weight="bold",
+                    font_size="12.5px",
+                    color="#ffffff",
+                ),
+                content=item["aciklama_tam"],
+            ),
         ),
         rx.table.cell(
-            rx.text(item["miktar_str"].to(str), font_size="12.5px", color="#cbd5e1"),
+            rx.text(item["miktar_str"], font_size="12px", color="#cbd5e1"),
             text_align="center",
         ),
         rx.table.cell(
-            rx.text(
-                item["birim_fiyat_str"].to(str),
-                font_size="13px",
-                font_weight="bold",
-                color="#38bdf8",
-                font_family="monospace",
-            ),
+            rx.text(item["birim_fiyat_str"], font_size="12px", color="#cbd5e1"),
             text_align="right",
         ),
         rx.table.cell(
-            rx.text(
-                item["tutar_tl_str"].to(str),
-                font_size="13px",
-                font_weight="bold",
-                color="#4ade80",
-                font_family="monospace",
-            ),
+            rx.text(item["satir_toplam_str"], color="#4ade80", font_weight="bold", font_size="12.5px"),
             text_align="right",
         ),
         align="center",
@@ -135,11 +131,10 @@ def quote_upload_main() -> rx.Component:
                 padding_y="4px",
             ),
 
-            # 3. Yükleme Kartı (rx.form ile Korumaya Alınmış Garantili Yükleme)
+            # 3. Yükleme Kartı
             rx.card(
                 rx.form(
                     rx.vstack(
-                        # Üst Kısım: Dosya Seçim Alanı
                         rx.vstack(
                             rx.text("Teklif Dosyası (.xlsx / .xls / .pdf):", font_size="12px", font_weight="600", color="#94a3b8"),
                             rx.upload(
@@ -187,13 +182,12 @@ def quote_upload_main() -> rx.Component:
                             spacing="1",
                         ),
 
-                        # Alt Kısım: Sağ Altta Form Submit Butonu
                         rx.hstack(
                             rx.spacer(),
                             rx.button(
                                 rx.icon("upload", size=16),
                                 "Teklif Dosyasını Ayrıştır & Yükle",
-                                type="submit",  # <-- rx.form submit tetikleyici
+                                type="submit",
                                 color_scheme="blue",
                                 size="3",
                                 padding_x="22px",
@@ -217,7 +211,7 @@ def quote_upload_main() -> rx.Component:
                 width="100%",
             ),
 
-            # 4. Dinamik İçerik: Ayrıştırılan Veriler veya Tanıtım Kartları
+            # 4. Dinamik İçerik
             rx.cond(
                 QuoteUploadState.has_file,
                 rx.vstack(
@@ -331,8 +325,10 @@ def quote_upload_main() -> rx.Component:
                                         rx.table.column_header_cell("MİKTAR", text_align="center", width="120px"),
                                         rx.table.column_header_cell("BİRİM SATIŞ", text_align="right", width="150px"),
                                         rx.table.column_header_cell(
-                                            "TOPLAM TUTAR (" + QuoteUploadState.para_birimi_sembol + ")"
-                                        )
+                                            "TOPLAM TUTAR (" + QuoteUploadState.para_birimi_sembol + ")",
+                                            text_align="right",
+                                            width="170px",
+                                        ),
                                     )
                                 ),
                                 rx.table.body(
@@ -353,7 +349,7 @@ def quote_upload_main() -> rx.Component:
                     width="100%",
                 ),
 
-                # Dosya Henüz Seçilmemişken Gösterilen Pipeline Kartları
+                # Boş Durum Kartları
                 rx.vstack(
                     rx.card(
                         rx.hstack(
@@ -392,7 +388,7 @@ def quote_upload_main() -> rx.Component:
 
             rx.spacer(),
 
-            # 5. Sistem Bildirim Rozeti (Pill)
+            # 5. Sistem Bildirim Rozeti
             rx.hstack(
                 rx.spacer(),
                 rx.card(

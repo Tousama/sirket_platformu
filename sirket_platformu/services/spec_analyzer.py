@@ -1,144 +1,197 @@
-import io
 import re
-from typing import Any, Dict
-import pdfplumber
+from typing import Dict, Any, List
 
+class SpecAnalyzerEngine:
+    """
+    Teknik şartname metinlerini ayrıştıran ve cihaz özellikleri ile
+    kural tabanlı karşılaştıran analiz motoru.
+    """
 
-def extract_text_from_file(file_obj) -> str:
-  """PDF veya text tabanlı dosyalardan ham metni çıkarır."""
-  if isinstance(file_obj, bytes):
-    stream = io.BytesIO(file_obj)
-  else:
-    stream = file_obj
+    @staticmethod
+    def extract_spec_parameters(raw_text: str) -> Dict[str, Any]:
+        params = {
+            "ip_rating": None,
+            "is_atex_required": False,
+            "atex_zone": None,
+            "gas_group": None,
+            "temp_class": None,
+            "max_ambient_temp": None,
+            "min_ambient_temp": None,
+            "voltage": None,
+            "protocol": None,
+            "body_material": None,
+        }
 
-  text = ""
-  try:
-    with pdfplumber.open(stream) as pdf:
-      for page in pdf.pages:
-        t = page.extract_text(layout=False) or ""
-        text += t + "\n"
-  except Exception:
-    pass
-  return text
+        if not raw_text:
+            return params
 
+        # IP Koruma Seviyesi Tespiti (Örn: IP65, IP 66, IP67, IP68)
+        ip_match = re.search(r"\bIP\s?([0-9]{2})\b", raw_text, re.IGNORECASE)
+        if ip_match:
+            params["ip_rating"] = int(ip_match.group(1))
 
-def analyze_technical_specification(file_obj, filename: str = "") -> Dict[str, Any]:
-  raw_text = extract_text_from_file(file_obj)
-  if not raw_text:
-    return {}
+        # ATEX / Ex-Proof Gereksinimi
+        if re.search(r"\b(atex|ex-proof|ex\s?proof|patlayıcı\s?ortam|ex\s?ia|ex\s?d)\b", raw_text, re.IGNORECASE):
+            params["is_atex_required"] = True
+            
+            zone_match = re.search(r"\b(zone\s?[0-2]|zon\s?[0-2])\b", raw_text, re.IGNORECASE)
+            params["atex_zone"] = zone_match.group(0).upper() if zone_match else "Zone 1"
 
-  lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+            gas_match = re.search(r"\b(IIC|IIB|IIA)\b", raw_text, re.IGNORECASE)
+            params["gas_group"] = gas_match.group(1).upper() if gas_match else "IIC"
 
-  # 1. Kurum / İdare Tespiti
-  kurum = "Sayın Yetkili"
-  for line in lines[:20]:
-    if any(k in line.upper() for k in ["GENEL MÜDÜRLÜĞÜ", "İŞLETME MÜDÜRLÜĞÜ", "A.Ş.", "DAİRESİ"]):
-      kurum = line.title()
-      break
+            temp_cls = re.search(r"\b(T[1-6])\b", raw_text)
+            params["temp_class"] = temp_cls.group(1).upper() if temp_cls else "T4"
 
-  # 2. Şartname Konusu / Referans No
-  konu = ""
-  for i, line in enumerate(lines[:30]):
-    if any(k in line.upper() for k in ["TEKNİK ŞARTNAMESİ", "BAKIM HİZMETİ", "HİZMETİ ALIMI"]):
-      konu = line
-      break
-    if line.upper().startswith("1. KONU") or line.upper().startswith("KONU"):
-      if i + 1 < len(lines):
-        konu = lines[i + 1]
-      break
+        # Çalışma Sıcaklıkları
+        temp_range_match = re.search(r"(-?\d{1,2})\s*(?:\.\.|ila|-|\/)\s*\+?(\d{2,3})\s*°?C", raw_text, re.IGNORECASE)
+        if temp_range_match:
+            params["min_ambient_temp"] = int(temp_range_match.group(1))
+            params["max_ambient_temp"] = int(temp_range_match.group(2))
+        else:
+            single_temp_match = re.search(r"(\+?\d{2})\s*(?:°?C|derece)", raw_text, re.IGNORECASE)
+            if single_temp_match:
+                params["max_ambient_temp"] = int(single_temp_match.group(1))
 
-  if not konu:
-    konu = filename.replace(".pdf", "").replace("_", " ").title()
+        # Besleme Gerilimi
+        if re.search(r"\b24\s*V(?:DC)?\b", raw_text, re.IGNORECASE):
+            params["voltage"] = "24VDC"
+        elif re.search(r"\b(?:220|230)\s*V(?:AC)?\b", raw_text, re.IGNORECASE):
+            params["voltage"] = "230VAC"
+        elif re.search(r"\b(?:380|400)\s*V(?:AC)?\b", raw_text, re.IGNORECASE):
+            params["voltage"] = "400VAC"
 
-  # 3. İş Türü Tespiti (Servis/Bakım mı yoksa Malzeme Temini mi?)
-  is_bakim_servis = any(
-      k in raw_text.lower()
-      for k in ["bakım", "dcs", "arıza", "servis", "scada", "periyodik", "uzaktan bağlantı", "onarım"]
-  )
+        # Haberleşme / Sinyal Protokolleri
+        proto_map = {
+            "4-20mA HART": r"4-20\s*mA\s*HART",
+            "Modbus RTU": r"Modbus\s*RTU",
+            "Modbus TCP": r"Modbus\s*TCP",
+            "Profinet": r"Profinet",
+            "Profibus": r"Profibus",
+        }
+        for proto_name, pattern in proto_map.items():
+            if re.search(pattern, raw_text, re.IGNORECASE):
+                params["protocol"] = proto_name
+                break
 
-  # 4. Kapsam Maddelerini Şartnameden Cımbızlama
-  is_kapsami_maddeleri = []
-  haricler = []
-  isveren_sorumluluklari = []
+        # Gövde Malzemesi
+        if re.search(r"\b(316L|AISI\s?316|Paslanmaz)\b", raw_text, re.IGNORECASE):
+            params["body_material"] = "AISI 316L SS"
+        elif re.search(r"\b(Alüminyum|Aluminium)\b", raw_text, re.IGNORECASE):
+            params["body_material"] = "Alüminyum"
 
-  # Bakım işi ise şartnamedeki gerçek maddeleri çek:
-  if is_bakim_servis:
-    # GE&Nexus / DCS Donanımları tespiti
-    if "ge&nexus" in raw_text.lower() or "kontrol panel" in raw_text.lower():
-      is_kapsami_maddeleri.append(
-          "GE&NEXUS DCS Kontrol Paneli (MPU, MDI, MDO, MAI modülleri) ve endüstriyel haberleşme altyapısının periyodik genel bakımı."
-      )
+        return params
 
-    # 5 gün yerinde bakım kuralı
-    m_gun = re.search(r"(\d+)\s*(?:iş\s*)?günü\s*içerisinde\s*tamamlanacak", raw_text, re.IGNORECASE)
-    if m_gun or "5 (beş) iş günü" in raw_text or "ulaşım süresi (1 gün) de dahil" in raw_text:
-      is_kapsami_maddeleri.append(
-          "Yılda 1 defa tesiste yerinde genel bakım; sunucu, iş istasyonu ve PLC/DCS program yedeklerinin alınması (Ulaşım dahil 5 iş günü)."
-      )
+    @classmethod
+    def validate_equipment(cls, spec_params: Dict[str, Any], equipment: Dict[str, Any]) -> List[Dict[str, str]]:
+        discrepancies: List[Dict[str, str]] = []
 
-    # Uzaktan bağlantı desteği
-    if "uzaktan" in raw_text.lower():
-      m_saat = re.search(r"(\d+)\s*saatlik\s*süreyi\s*aşmamak", raw_text)
-      saat_str = f"toplam {m_saat.group(1)} saat" if m_saat else "10 saat"
-      is_kapsami_maddeleri.append(
-          f"Yıl boyunca arıza müdahale ve yazılım revizyonları için {saat_str} uzaktan servis desteği verilmesi (En geç 8 saatte bağlantı)."
-      )
+        if not spec_params:
+            return discrepancies
 
-    # Acil yerinde servis
-    if "48 (kırk sekiz) saat" in raw_text or "48 saat" in raw_text:
-      is_kapsami_maddeleri.append(
-          "Uzaktan giderilemeyen kritik arızalarda yazılı çağrıya istinaden en geç 48 saat içerisinde sahada yerinde müdahale sağlanması."
-      )
+        # 1. IP Koruma Kontrolü
+        if spec_params.get("ip_rating"):
+            equip_ip = equipment.get("ip_rating")
+            if not equip_ip and "ip" in equipment:
+                ip_val = re.search(r"(\d{2})", str(equipment["ip"]))
+                equip_ip = int(ip_val.group(1)) if ip_val else None
 
-    # Scada ve revizyon
-    if "revizyon" in raw_text.lower() or "scada" in raw_text.lower():
-      is_kapsami_maddeleri.append(
-          "İdarenin talebi doğrultusunda DCS lojik program ve SCADA ekranlarında gerekli ilave, çıkarma ve optimizasyon revizyonlarının yapılması."
-      )
+            if not equip_ip:
+                discrepancies.append({
+                    "param": "IP Koruma",
+                    "status": "Eksik Bilgi",
+                    "detail": f"Şartname IP{spec_params['ip_rating']} istiyor, cihaz föyünde IP seviyesi bulunamadı.",
+                    "level": "warning"
+                })
+            elif equip_ip < spec_params["ip_rating"]:
+                discrepancies.append({
+                    "param": "IP Koruma",
+                    "status": "Uyumsuz",
+                    "detail": f"Şartname IP{spec_params['ip_rating']} isterken, teklif edilen cihaz IP{equip_ip}.",
+                    "level": "danger"
+                })
+            else:
+                discrepancies.append({
+                    "param": "IP Koruma",
+                    "status": "Uyumlu",
+                    "detail": f"Cihaz IP{equip_ip} koruma sınıfı ile şartnameyi karşılıyor.",
+                    "level": "success"
+                })
 
-    # 10. Madde: Kapsam Dışı Hususlar
-    if "10. sözleşme kapsamına girmeyen" in raw_text.lower() or "kapsamaz" in raw_text.lower():
-      haricler.append("DCS sistemi haricindeki harici elektrik tesisatı, şebeke ve saha besleme arızaları.")
-      haricler.append("Saha enstrümanları (transmitter, kontrol vanası, seviye şalteri vb.) mekanik ve kalibrasyon bakımları.")
-      haricler.append("DCS sistemi çalışması için gerekli harici sarf malzemeleri (yazıcı şeridi, sürekli form vb.) temini.")
-      haricler.append("İdarenin temin etmesi gereken arızalı kart, modül, gateway ve switch donanımlarının malzeme bedelleri.")
+        # 2. ATEX / Ex-Proof Kontrolü
+        if spec_params.get("is_atex_required"):
+            equip_atex = equipment.get("is_atex", False)
+            if not equip_atex and "ex" in equipment:
+                equip_atex = "atex" in str(equipment["ex"]).lower() or "ex" in str(equipment["ex"]).lower()
 
-    # İşveren Sorumlulukları
-    isveren_sorumluluklari.append("DCS program yedeklerinin alınabilmesi için gerekli lisanslı yazılımların ve harici disklerin temini.")
-    isveren_sorumluluklari.append("Uzaktan erişim oturumları için güvenli internet ve VPN/uzaktan bağlantı altyapısının hazır edilmesi.")
-    isveren_sorumluluklari.append("Değişmesi gereken arızalı kart ve donanımların idare tarafından temin edilmesi.")
-    isveren_sorumluluklari.append("Genel bakım çalışması için en az 3 (üç) hafta öncesinden yükleniciye yazılı bildirim yapılması.")
+            if not equip_atex:
+                discrepancies.append({
+                    "param": "ATEX / Ex-Proof",
+                    "status": "Kritik Hata",
+                    "detail": f"Şartname patlayıcı ortam sertifikası ({spec_params.get('atex_zone')}) istiyor, ürün Ex-proof değil.",
+                    "level": "danger"
+                })
+            else:
+                discrepancies.append({
+                    "param": "ATEX / Ex-Proof",
+                    "status": "Uyumlu",
+                    "detail": f"Ürün {spec_params.get('atex_zone', 'Zone 1')} patlayıcı saha şartlarına uygundur.",
+                    "level": "success"
+                })
 
-  else:
-    # Malzeme Temini İşi İse
-    is_kapsami_maddeleri = [
-        "Şartname teknik kriterlerine ve talep edilen ATEX/IECEx koruma sınıflarına haiz cihaz temini.",
-        "EN 10204 3.1 Malzeme İzlenebilirlik ve Fabrika Kalibrasyon Test Sertifikalarının teslimi.",
-        "Ekipmanların nakliye sigortalı (DAP/CIP) olarak tesis sahasına güvenli teslimatı.",
-    ]
-    isveren_sorumluluklari = [
-        "Malzemelerin şantiye sahasında teslim alınması, uygun kapalı depolama koşullarının sağlanması.",
-        "Malzeme muayene ve kabul protokollerinin şartname takvimine uygun imzalanması.",
-    ]
-    haricler = [
-        "Sahada mekanik ve elektriksel montaj, kablolama ve sonlandırma işçilikleri.",
-        "Saha loop testleri, enerji verme ve devreye alma hizmetleri.",
-    ]
+        # 3. Sıcaklık Dayanımı
+        if spec_params.get("max_ambient_temp"):
+            equip_max_t = equipment.get("max_temp")
+            if equip_max_t is not None:
+                if equip_max_t < spec_params["max_ambient_temp"]:
+                    discrepancies.append({
+                        "param": "Çalışma Sıcaklığı",
+                        "status": "Sıcaklık Aşımı",
+                        "detail": f"Şartname tepe ortam sıcaklığı {spec_params['max_ambient_temp']}°C, ürün sınırı {equip_max_t}°C.",
+                        "level": "danger"
+                    })
+                else:
+                    discrepancies.append({
+                        "param": "Çalışma Sıcaklığı",
+                        "status": "Uyumlu",
+                        "detail": f"Cihaz termal sınırı ({equip_max_t}°C) ortam sıcaklığını karşılıyor.",
+                        "level": "success"
+                    })
 
-  # Giriş Yazısı
-  giris_yazisi = (
-      f"İşbu teknik teklif dokümanı; {kurum} bünyesinde bulunan 30 t/h Buhar Kazanına ait GE&NEXUS DCS Kontrol Sisteminin "
-      "1 (bir) yıllık periyodik bakım, uzaktan destek ve acil servis hizmetlerinin teknik şartnameye tam uygun olarak yürütülmesini kapsamaktadır."
-      if is_bakim_servis
-      else f"İşbu teknik teklif dokümanı; {kurum} tarafından talep edilen şartname föylerine uygun enstrümanların temin ve teslimini kapsamaktadır."
-  )
+        # 4. Besleme Gerilimi
+        if spec_params.get("voltage"):
+            equip_volt = str(equipment.get("voltage", "")).upper()
+            if equip_volt and spec_params["voltage"] not in equip_volt:
+                discrepancies.append({
+                    "param": "Besleme Gerilimi",
+                    "status": "Gerilim Uyuşmazlığı",
+                    "detail": f"Şartname {spec_params['voltage']} talep ediyor, teklif edilen cihaz {equip_volt}.",
+                    "level": "danger"
+                })
+            elif equip_volt:
+                discrepancies.append({
+                    "param": "Besleme Gerilimi",
+                    "status": "Uyumlu",
+                    "detail": f"Besleme gerilimi ({spec_params['voltage']}) doğrulanmıştır.",
+                    "level": "success"
+                })
 
-  return {
-      "kurum": kurum,
-      "konu": konu,
-      "giris_yazisi": giris_yazisi,
-      "is_kapsami": "\n• ".join([""] + is_kapsami_maddeleri).strip(),
-      "isveren_sorumluluklari": "\n• ".join([""] + isveren_sorumluluklari).strip(),
-      "haric_tutulanlar": "\n• ".join([""] + haricler).strip(),
-      "is_turu": "DCS & Otomasyon Yıllık Bakım Hizmeti" if is_bakim_servis else "Endüstriyel Enstrüman & Malzeme Temini",
-  }
+        # 5. Protokol / Sinyal Tipi
+        if spec_params.get("protocol"):
+            equip_proto = str(equipment.get("protocol") or equipment.get("sinyal", "")).upper()
+            if equip_proto and spec_params["protocol"].upper() not in equip_proto:
+                discrepancies.append({
+                    "param": "Sinyal / Protokol",
+                    "status": "Arayüz Sapması",
+                    "detail": f"Şartname {spec_params['protocol']} istiyor, cihaz {equip_proto} çıkışlı.",
+                    "level": "warning"
+                })
+            elif equip_proto:
+                discrepancies.append({
+                    "param": "Sinyal / Protokol",
+                    "status": "Uyumlu",
+                    "detail": f"{spec_params['protocol']} haberleşme arayüzü tam uyumlu.",
+                    "level": "success"
+                })
+
+        return discrepancies
