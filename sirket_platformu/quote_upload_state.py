@@ -9,6 +9,25 @@ from .shared_quotes import register_quote
 from .dashboard_state import DashboardState
 from .revision_diff_state import VERSIONS_DB
 
+
+try:
+    from .services.db_service import save_teklif_to_db
+except ImportError:
+    try:
+        from services.db_service import save_teklif_to_db
+    except ImportError:
+        save_teklif_to_db = None
+
+
+try:
+    from .procurement_coverage_state import ProcurementCoverageState
+except ImportError:
+    try:
+        from procurement_coverage_state import ProcurementCoverageState
+    except ImportError:
+        ProcurementCoverageState = None
+
+
 try:
     from .services.parsers import (
         extract_pdf_full,
@@ -27,29 +46,32 @@ UPLOAD_ID = "quote_upload_input_id"
 
 def detect_currency_and_symbol(raw_text: str) -> Tuple[str, str]:
     """
-    PDF/Excel ham metninden veya kodlama bozulmalarından para birimini yakalar.
+    Belgenin ana para birimini tespit eder.
+    'Toplam Fiyat Teklifi TL' gibi bilgilendirme kolonları yerine
+    asıl teklif para birimini (EUR / USD) önceliklendirir.
     """
-    t_low = raw_text.lower()
-    
-    # 1. EURO Tespiti (Sembol, bozuk utf-8/latin1 baytları, kelimeler ve sütun başlıkları)
-    euro_patterns = [
-        "€", "eur", "euro", "avro", "\x80", "\u20ac", 
-        "fiyat (eur)", "tutar (eur)", "birim fiyat (eur)", "toplam (eur)",
-        "fiyat(eur)", "tutar(eur)"
-    ]
-    if any(p in t_low for p in euro_patterns):
+    t = raw_text.lower()
+
+    # 1. EURO Tespiti (€ simgesi veya Fiyat sütunundaki EUR/Euro ifadesi)
+    if "€" in raw_text or "\x80" in raw_text or "\u20ac" in raw_text:
+        return "EUR", "€"
+    if re.search(r"\b(eur|euro|avro)\b", t):
+        return "EUR", "€"
+    if re.search(r"(fiyat|tutar|birim|toplam)\s*\(?eur", t):
         return "EUR", "€"
 
-    # 2. USD Tespiti
-    usd_patterns = [
-        "$", "usd", "dolar", "dollar",
-        "fiyat (usd)", "tutar (usd)", "birim fiyat (usd)", "toplam (usd)",
-        "fiyat(usd)", "tutar(usd)"
-    ]
-    if any(p in t_low for p in usd_patterns):
+    # 2. USD Tespiti ($ simgesi veya USD ifadesi)
+    if "$" in raw_text:
+        return "USD", "$"
+    if re.search(r"\b(usd|dolar|dollar)\b", t):
+        return "USD", "$"
+    if re.search(r"(fiyat|tutar|birim|toplam)\s*\(?usd", t):
         return "USD", "$"
 
-    # 3. TRY Tespiti
+    # 3. Yalnızca döviz sembolü/ibaresi yoksa ve açıkça TL/₺ varsa TRY kabul edilir
+    if "₺" in raw_text or re.search(r"\b(tl|try|türk lirası|turk lirasi)\b", t):
+        return "TRY", "₺"
+
     return "TRY", "₺"
 
 
@@ -155,16 +177,26 @@ class QuoteUploadState(rx.State):
             # =========================================================
             # 2. KISIM: KESİN PARA BİRİMİ VE KUR TESPİTİ
             # =========================================================
-            kalem_metinleri = " ".join([
-                str(k.get("malzeme_adi", "")) + " " + 
-                str(k.get("para_birimi", "")) + " " + 
-                str(k.get("birim", ""))
-                for k in raw_kalemler
-            ])
-            metin_havuzu = full_raw_text + " " + file.filename + " " + self.konu + " " + kalem_metinleri
+            # Kalemlerdeki para birimlerini topla
+            kalem_pb_list = [str(k.get("para_birimi", "TRY")).upper() for k in raw_kalemler]
+            try_count = sum(1 for pb in kalem_pb_list if pb == "TRY")
+            eur_count = sum(1 for pb in kalem_pb_list if pb == "EUR")
+            usd_count = sum(1 for pb in kalem_pb_list if pb == "USD")
 
-            # Genişletilmiş fonksiyon ile para birimi algılama
-            self.para_birimi, self.para_birimi_sembol = detect_currency_and_symbol(metin_havuzu)
+            # Eğer kalemlerin çoğu TL ise (örneğin 12 kalemin 12'si de TL ise), üst kart ASLA Euro olamaz!
+            if try_count >= len(raw_kalemler) / 2 and try_count > 0:
+                self.para_birimi = "TRY"
+                self.para_birimi_sembol = "₺"
+            elif eur_count > usd_count and eur_count > 0:
+                self.para_birimi = "EUR"
+                self.para_birimi_sembol = "€"
+            elif usd_count > 0:
+                self.para_birimi = "USD"
+                self.para_birimi_sembol = "$"
+            else:
+                # Yedek tespit
+                self.para_birimi = parsed_result.get("para_birimi", "TRY")
+                self.para_birimi_sembol = "€" if self.para_birimi == "EUR" else ("$" if self.para_birimi == "USD" else "₺")
 
             # Geçerli kur çarpanı
             aktif_kur = self.kur_eur if self.para_birimi == "EUR" else (self.kur_usd if self.para_birimi == "USD" else 1.0)
@@ -180,12 +212,14 @@ class QuoteUploadState(rx.State):
                 b_fiyat = float(k.get("birim_satis") or k.get("birim_fiyat") or 0.0)
                 satir_tutar_orijinal = float(k.get("toplam") or k.get("toplam_tutar") or (mik * b_fiyat))
                 
-                # 1. Ham adı al ve sonundaki "- 1", "- 1 Set", "-1" gibi ekleri temizle
+                # Kalemin para birimini genel para birimine eşitle (böylece üst ve alt asla çelişmez)
+                kalem_pb = self.para_birimi
+                kalem_sembol = self.para_birimi_sembol
+
                 ham_ad = str(k.get("malzeme_adi") or k.get("tanim") or "Tanımsız Malzeme")
                 temiz_ad = re.sub(r"\s*[-–—]\s*\d+\s*(?:set|adet|ad\.?)?$", "", ham_ad, flags=re.IGNORECASE).strip()
     
-                # Döviz tutarının güncel kur ile TL karşılığı
-                satir_tutar_tl = satir_tutar_orijinal * aktif_kur
+                satir_tutar_tl = satir_tutar_orijinal if self.para_birimi == "TRY" else (satir_tutar_orijinal * aktif_kur)
     
                 b_maliyet = float(k.get("birim_maliyet", 0.0))
                 m_pb = str(k.get("maliyet_pb", "TRY")).upper()
@@ -197,20 +231,20 @@ class QuoteUploadState(rx.State):
                 toplam_satis_orijinal += satir_tutar_orijinal
     
                 formatted_kalemler.append({
-                    "malzeme_adi": temiz_ad,  # <-- Buraya k.get(...) yerine temiz_ad verin
+                    "malzeme_adi": temiz_ad,
                     "miktar": mik,
                     "miktar_str": f"{int(mik) if mik.is_integer() else mik} {birim}",
                     "birim": birim,
                     "birim_fiyat": b_fiyat,
-                    "birim_fiyat_str": format_currency_str(b_fiyat, self.para_birimi_sembol),
+                    "birim_fiyat_str": format_currency_str(b_fiyat, kalem_sembol),
                     "tutar_orijinal": satir_tutar_orijinal,
                     "tutar_tl": satir_tutar_tl,
                     "tutar_tl_str": format_currency_str(satir_tutar_tl, "₺"),
-                    "satir_toplam_str": format_currency_str(satir_tutar_orijinal, self.para_birimi_sembol),
-                    "para_birimi": self.para_birimi,
+                    "satir_toplam_str": format_currency_str(satir_tutar_orijinal, kalem_sembol),
+                    "para_birimi": kalem_pb,
                 })
 
-            if parsed_toplam > 0:
+            if parsed_toplam > 0 and self.para_birimi == parsed_result.get("para_birimi"):
                 self.satis_tutari_orijinal = round(parsed_toplam, 2)
             else:
                 self.satis_tutari_orijinal = round(toplam_satis_orijinal, 2)
@@ -243,7 +277,6 @@ class QuoteUploadState(rx.State):
 
         except Exception as err:
             return rx.toast.error(f"Ayrıştırma hatası: {str(err)}", position="top-right")
-        
         
         
     async def teklifi_portala_kaydet(self):
@@ -288,6 +321,10 @@ class QuoteUploadState(rx.State):
             tutar_orj = float(k.get("tutar_orijinal") or (mik * b_fiyat))
             tutar_tl = float(k.get("tutar_tl") or (tutar_orj * aktif_kur))
 
+            # Kalemin kendi para birimi sembolü
+            k_pb = k.get("para_birimi") or self.para_birimi
+            k_sembol = "€" if k_pb == "EUR" else ("$" if k_pb == "USD" else "₺")
+
             evrensel_kalemler.append({
                 "malzeme_adi": ad,
                 "malzeme": ad,
@@ -299,13 +336,13 @@ class QuoteUploadState(rx.State):
                 "birim_fiyat": b_fiyat,
                 "birim_satis": b_fiyat,
                 "fiyat": b_fiyat,
-                "birim_fiyat_str": format_currency_str(b_fiyat, self.para_birimi_sembol),
+                "birim_fiyat_str": format_currency_str(b_fiyat, k_sembol),
                 "tutar_orijinal": tutar_orj,
                 "tutar_tl": tutar_tl,
                 "toplam": tutar_orj,
                 "toplam_tl": tutar_tl,
                 "tutar_tl_str": format_currency_str(tutar_tl, "₺"),
-                "para_birimi": self.para_birimi,
+                "para_birimi": k_pb,
             })
 
         # -------------------------------------------------------------
@@ -335,7 +372,26 @@ class QuoteUploadState(rx.State):
             )
         except Exception:
             pass
-
+        
+        # -------------------------------------------------------------
+        # 3.1 Kalıcı Veritabanına (DB) Kaydet
+        # -------------------------------------------------------------
+        if save_teklif_to_db:
+            try:
+                save_teklif_to_db(
+                    kod=self.teklif_kodu,
+                    musteri=self.musteri,
+                    konu=self.konu,
+                    tarih=self.teklif_tarihi,
+                    sorumlu=sorumlu_kisi,
+                    satis_try=self.satis_tutari_try,
+                    maliyet_try=self.toplam_maliyet,
+                    marj=100.0 if self.toplam_maliyet == 0 else round(((self.satis_tutari_try - self.toplam_maliyet) / self.satis_tutari_try) * 100, 1),
+                    kalemler=evrensel_kalemler,
+                )
+            except Exception:
+                pass
+        
         # -------------------------------------------------------------
         # 4. VERSIONS_DB Kaydı
         # -------------------------------------------------------------
@@ -411,3 +467,12 @@ class QuoteUploadState(rx.State):
             f"'{self.teklif_kodu}' teklifi portala ve karşılaştırma havuzuna başarıyla kaydedildi ({self.para_birimi_sembol})!",
             position="top-right",
         )
+        # -------------------------------------------------------------
+        # 6. Satınalma Kapsama Raporunu Canlı Güncelle
+        # -------------------------------------------------------------
+        try:
+            if ProcurementCoverageState:
+                proc_state = await self.get_state(ProcurementCoverageState)
+                await proc_state.sync_from_dashboard()
+        except Exception:
+            pass

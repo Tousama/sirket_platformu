@@ -1,28 +1,26 @@
 import reflex as rx
 import asyncio
+import os
 from typing import List, Dict, Any, Union
 from datetime import datetime
 from .services.db_service import get_all_teklifler_from_db
 
 
 class DashboardState(rx.State):
-    # Ana Teklif Listesi
     raw_quotes: List[Dict[str, Any]] = []
 
-    # KPI Filtreleme ve Arama
     selected_kpi: str = "ALL"
     status_filter: str = "Tümü"
     selected_status: str = "Tümü"
     search_query: str = ""
 
-    # Para Birimi ve Kur Yönetimi
     selected_currency: str = "TRY"
+    currency: str = "TRY (₺)"
     kur_usd: float = 43.64
     kur_eur: float = 51.84
     last_rate_update: str = "Güncel"
     is_updating_rates: bool = False
 
-    # Pasta Grafik Görünürlük Bayrakları (Legend Toggle)
     hide_hazirlaniyor: bool = False
     hide_musteride: bool = False
     hide_kazanildi: bool = False
@@ -30,37 +28,28 @@ class DashboardState(rx.State):
     hide_revizyon: bool = False
     hide_reddedildi: bool = False
 
-    # -------------------------------------------------------------
-    # Kullanıcı Etkileşim ve Filtreleme Metotları
-    # -------------------------------------------------------------
+    async def on_load(self):
+        await self.load_quotes()
+
     def select_kpi(self, kpi_key: str):
-        """KPI kartlarına tıklandığında filtre durumunu günceller."""
         self.selected_kpi = kpi_key
 
     def set_currency(self, currency: Union[str, List[str]]):
-        """Segmented control para birimi değiştiğinde çalışır."""
-        if isinstance(currency, list):
-            self.selected_currency = currency[0] if currency else "TRY"
-        else:
-            self.selected_currency = str(currency)
+        val = currency[0] if isinstance(currency, list) and currency else str(currency)
+        self.selected_currency = val
+        self.currency = val
 
     def set_search_query(self, query: str):
-        """Arama kutusuna metin girildiğinde çalışır."""
         self.search_query = query
 
     def set_status(self, status: str):
-        """Durum filtresi dropdown'ı değiştiğinde çalışır."""
         self.status_filter = status
         self.selected_status = status
 
     def set_status_filter(self, status: str):
-        """Alternatif durum filtresi metodu."""
         self.status_filter = status
         self.selected_status = status
 
-    # -------------------------------------------------------------
-    # Pasta Grafik Toggle Metotları
-    # -------------------------------------------------------------
     def toggle_hazirlaniyor(self):
         self.hide_hazirlaniyor = not self.hide_hazirlaniyor
 
@@ -81,35 +70,33 @@ class DashboardState(rx.State):
     def toggle_reddedildi(self):
         self.hide_reddedildi = not self.hide_reddedildi
 
-    # -------------------------------------------------------------
-    # Veri Yükleme ve Kur Güncelleme İşlemleri
-    # -------------------------------------------------------------
     async def load_quotes(self):
-        """Dashboard verilerini SQLite veritabanından çeker ve kalıcı tutar."""
+        """SQLite veritabanından teklifleri çeker ve tutarları garanti altına alır."""
         db_teklifler = get_all_teklifler_from_db()
 
         yeni_liste = []
         for t in db_teklifler:
-            satis = float(t.get("satis_toplam", 0.0) or t.get("satis_try", 0.0))
-            maliyet = float(t.get("maliyet_toplam", 0.0) or t.get("maliyet_try", 0.0))
+            satis = float(t.get("satis_toplam", 0.0) or t.get("satis_try", 0.0) or t.get("satis", 0.0))
+            maliyet = float(t.get("maliyet_toplam", 0.0) or t.get("maliyet_try", 0.0) or t.get("maliyet", 0.0))
+            
+            # Eğer ana tabloda 0 görünüyorsa kalemler üzerinden tutar topla
+            if satis == 0.0 and t.get("kalemler"):
+                for k in t["kalemler"]:
+                    satis += float(k.get("toplam_tl", 0.0) or (float(k.get("miktar", 1.0)) * float(k.get("birim_satis", 0.0))))
 
-            marj = 100.0 if maliyet == 0 else round(((satis - maliyet) / satis) * 100, 1) if satis > 0 else 0.0
+            marj = 100.0 if maliyet == 0.0 else (round(((satis - maliyet) / satis) * 100, 1) if satis > 0 else 0.0)
+            marj_val = int(marj) if marj.is_integer() else marj
 
             yeni_liste.append({
-                "kod": t["kod"],
-                "teklif_kodu": t["kod"],
-                "musteri": t.get("musteri", "-"),
-                "konu": t.get("konu", "-"),
-                "tarih": t.get("teklif_tarihi", "-"),
-                "sorumlu": t.get("sorumlu", "-"),
-                "muhendis": t.get("sorumlu", "-"),
+                "kod": str(t.get("kod", "")),
+                "musteri": str(t.get("musteri", "-")),
+                "konu": str(t.get("konu", "-")),
+                "tarih": str(t.get("teklif_tarihi", "-")),
+                "sorumlu": str(t.get("sorumlu", "-")),
                 "satis_try": satis,
-                "satis_str": f"{satis:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
                 "maliyet_try": maliyet,
-                "maliyet_str": f"{maliyet:,.2f} ₺".replace(",", "X").replace(".", ",").replace("X", "."),
-                "marj": marj,
-                "kar_marji": marj,
-                "durum": t.get("durum", "Müşteride"),
+                "kar_marji": marj_val,
+                "durum": str(t.get("durum", "Müşteride")),
                 "yaslanma_gun": int(t.get("yaslanma_gun", 0)),
                 "kalemler": t.get("kalemler", []),
             })
@@ -117,7 +104,6 @@ class DashboardState(rx.State):
         self.raw_quotes = yeni_liste
 
     async def update_rates(self):
-        """Kur yenileme işlemi."""
         self.is_updating_rates = True
         yield
         await asyncio.sleep(1)
@@ -125,27 +111,29 @@ class DashboardState(rx.State):
         self.is_updating_rates = False
 
     async def refresh_tcmb_now(self):
-        """Butona tıklandığında hem kurları hem teklifleri SQLite'tan yeniler."""
         self.is_updating_rates = True
         yield
         await self.load_quotes()
         self.last_rate_update = datetime.now().strftime("%H:%M")
         self.is_updating_rates = False
-        yield rx.toast.info("Veriler ve TCMB kurları güncellendi.", position="top-right")
+        yield rx.toast.info("Veriler güncellendi.", position="top-right")
 
+    # -------------------------------------------------------------
+    # Başlangıç ve Saatlik Planlayıcı Metodu (Hatanın Çözümü)
+    # -------------------------------------------------------------
     async def start_hourly_rate_scheduler(self):
-        """Uygulama açılışında çağrılan başlangıç senkronizasyonu."""
+        """Uygulama ayağa kalktığında çağrılan arka plan tetikleyicisi."""
         await self.load_quotes()
         self.last_rate_update = datetime.now().strftime("%H:%M")
 
-    # -------------------------------------------------------------
-    # Dinamik Hesaplanmış Değerler (@rx.var)
-    # -------------------------------------------------------------
     @rx.var
     def currency_symbol(self) -> str:
-        """Seçili para biriminin sembolünü döndürür."""
-        semboller = {"TRY": "₺", "USD": "$", "EUR": "€"}
-        return semboller.get(self.selected_currency, "₺")
+        curr = str(self.selected_currency)
+        if "USD" in curr:
+            return "$"
+        elif "EUR" in curr:
+            return "€"
+        return "₺"
 
     @rx.var
     def total_quotes_count(self) -> int:
@@ -154,9 +142,9 @@ class DashboardState(rx.State):
     @rx.var
     def total_quotes_amount(self) -> float:
         toplam_try = sum(float(q.get("satis_try", 0.0)) for q in self.raw_quotes)
-        if self.selected_currency == "USD" and self.kur_usd > 0:
+        if "USD" in self.selected_currency and self.kur_usd > 0:
             return toplam_try / self.kur_usd
-        elif self.selected_currency == "EUR" and self.kur_eur > 0:
+        elif "EUR" in self.selected_currency and self.kur_eur > 0:
             return toplam_try / self.kur_eur
         return toplam_try
 
@@ -167,7 +155,6 @@ class DashboardState(rx.State):
 
     @rx.var
     def delayed_count(self) -> int:
-        """Geciken hazırlık veya yanıt bekleyen teklif sayısı."""
         return sum(
             1 for q in self.raw_quotes
             if int(q.get("yaslanma_gun", 0)) > 1 and q.get("durum") not in ["Onaylandı", "Kazanıldı"]
@@ -175,15 +162,14 @@ class DashboardState(rx.State):
 
     @rx.var
     def waiting_customer_count(self) -> int:
-        """Müşteride bekleyen teklif sayısı."""
         return sum(1 for q in self.raw_quotes if q.get("durum") == "Müşteride")
 
     @rx.var
     def waiting_customer_amount(self) -> float:
         toplam_try = sum(float(q.get("satis_try", 0.0)) for q in self.raw_quotes if q.get("durum") == "Müşteride")
-        if self.selected_currency == "USD" and self.kur_usd > 0:
+        if "USD" in self.selected_currency and self.kur_usd > 0:
             return toplam_try / self.kur_usd
-        elif self.selected_currency == "EUR" and self.kur_eur > 0:
+        elif "EUR" in self.selected_currency and self.kur_eur > 0:
             return toplam_try / self.kur_eur
         return toplam_try
 
@@ -194,15 +180,14 @@ class DashboardState(rx.State):
 
     @rx.var
     def won_count(self) -> int:
-        """Onaylanan / Kazanılan teklif sayısı."""
         return sum(1 for q in self.raw_quotes if q.get("durum") in ["Onaylandı", "Kazanıldı"])
 
     @rx.var
     def won_amount(self) -> float:
         toplam_try = sum(float(q.get("satis_try", 0.0)) for q in self.raw_quotes if q.get("durum") in ["Onaylandı", "Kazanıldı"])
-        if self.selected_currency == "USD" and self.kur_usd > 0:
+        if "USD" in self.selected_currency and self.kur_usd > 0:
             return toplam_try / self.kur_usd
-        elif self.selected_currency == "EUR" and self.kur_eur > 0:
+        elif "EUR" in self.selected_currency and self.kur_eur > 0:
             return toplam_try / self.kur_eur
         return toplam_try
 
@@ -212,56 +197,71 @@ class DashboardState(rx.State):
         return f"{tutar:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     @rx.var
-    def revision_count(self) -> int:
-        """Revizyon sürecindeki teklif sayısı."""
-        return sum(
-            1 for q in self.raw_quotes
-            if "rev" in str(q.get("kod", "")).lower() or q.get("durum") == "Revizyonda"
-        )
+    def filtered_quotes(self) -> list[dict]:
+        curr = str(self.selected_currency)
+        if "EUR" in curr:
+            rate = float(self.kur_eur) if self.kur_eur > 0 else 51.84
+            symbol = "€"
+        elif "USD" in curr:
+            rate = float(self.kur_usd) if self.kur_usd > 0 else 43.64
+            symbol = "$"
+        else:
+            rate = 1.0
+            symbol = "₺"
 
-    @rx.var
-    def filtered_quotes(self) -> List[Dict[str, Any]]:
-        """KPI seçimi, durum filtresi ve arama metnine göre filtrelenmiş liste."""
-        sonuclar = self.raw_quotes
+        quotes = self.raw_quotes or []
+        result = []
+        q_search = self.search_query.strip().lower()
 
-        # KPI Kart Filtresi
-        if self.selected_kpi == "MUSTERIDE":
-            sonuclar = [q for q in sonuclar if q.get("durum") == "Müşteride"]
-        elif self.selected_kpi in ["ONAYLANDI", "WON", "KAZANILDI"]:
-            sonuclar = [q for q in sonuclar if q.get("durum") in ["Onaylandı", "Kazanıldı"]]
-        elif self.selected_kpi == "REVIZYON":
-            sonuclar = [q for q in sonuclar if "rev" in str(q.get("kod", "")).lower() or q.get("durum") == "Revizyonda"]
-        elif self.selected_kpi == "DELAYED":
-            sonuclar = [q for q in sonuclar if int(q.get("yaslanma_gun", 0)) > 1 and q.get("durum") not in ["Onaylandı", "Kazanıldı"]]
+        for q in quotes:
+            if q_search:
+                k = str(q.get("kod", "")).lower()
+                m = str(q.get("musteri", "")).lower()
+                c = str(q.get("konu", "")).lower()
+                if q_search not in k and q_search not in m and q_search not in c:
+                    continue
 
-        # Dropdown Durum Filtresi (status_filter / selected_status)
-        active_status = self.status_filter if self.status_filter != "Tümü" else self.selected_status
-        if active_status and active_status != "Tümü":
-            sonuclar = [q for q in sonuclar if q.get("durum") == active_status]
+            d = str(q.get("durum", ""))
+            if self.status_filter not in ["Tümü", "Tüm Durumlar"] and d != self.status_filter:
+                continue
 
-        # Metin Arama Filtresi
-        if self.search_query.strip():
-            q_lower = self.search_query.strip().lower()
-            sonuclar = [
-                q for q in sonuclar
-                if q_lower in str(q.get("kod", "")).lower()
-                or q_lower in str(q.get("musteri", "")).lower()
-                or q_lower in str(q.get("konu", "")).lower()
-            ]
+            if self.selected_kpi == "DELAYED" and int(q.get("yaslanma_gun", 0)) <= 1:
+                continue
+            elif self.selected_kpi == "WAITING" and d != "Müşteride":
+                continue
+            elif self.selected_kpi == "WON" and d not in ["Onaylandı", "Kazanıldı"]:
+                continue
 
-        return sonuclar
+            satis_raw = float(q.get("satis_try", 0.0))
+            maliyet_raw = float(q.get("maliyet_try", 0.0))
+
+            # dashboard_state.py içerisindeki filtered_quotes fonksiyonunda döngü sonunu şu şekilde güncelleyin:
+
+            satis_val = satis_raw / rate if rate > 0 else satis_raw
+            maliyet_val = maliyet_raw / rate if rate > 0 else maliyet_raw
+
+            s_str = f"{satis_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + f" {symbol}"
+            m_str = f"{maliyet_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + f" {symbol}"
+
+            # Marjı doğrudan Python'da temiz formatla (% işareti tek olacak şekilde)
+            raw_marj = str(q.get("kar_marji", "100")).replace("%", "")
+            marj_str = f"%{raw_marj}"
+
+            item = dict(q)
+            item["formatted_satis"] = s_str
+            item["formatted_maliyet"] = m_str
+            item["formatted_kar_marji"] = marj_str
+            result.append(item)
+
+        return result
+        
 
     @rx.var
     def filtered_quotes_count(self) -> int:
-        """dashboard_view.py içindeki 360. satır rozeti için filtrelenmiş teklif sayısı."""
         return len(self.filtered_quotes)
 
-    # -------------------------------------------------------------
-    # Pasta Grafiği İçin Dinamik Veri (@rx.var)
-    # -------------------------------------------------------------
     @rx.var
     def status_pie_data(self) -> List[Dict[str, Any]]:
-        """dashboard_view.py içindeki pie_chart_card için veri kaynağı."""
         durum_sayilari = {
             "Hazırlanıyor": 0,
             "Müşteride": 0,
@@ -299,15 +299,7 @@ class DashboardState(rx.State):
         return chart_data
 
     @rx.var
-    def pie_chart_data(self) -> List[Dict[str, Any]]:
-        return self.status_pie_data
-
-    # -------------------------------------------------------------
-    # Teklif Yaşlanma Çubuk Grafiği (@rx.var)
-    # -------------------------------------------------------------
-    @rx.var
     def aging_bar_data(self) -> List[Dict[str, Any]]:
-        """Tekliflerin bekleme sürelerine (yaslanma_gun) göre dağılım grafiği verisi."""
         araliklar = {
             "0-3 Gün": 0,
             "4-7 Gün": 0,
@@ -325,7 +317,4 @@ class DashboardState(rx.State):
             else:
                 araliklar["15+ Gün"] += 1
 
-        return [
-            {"range": k, "count": v}
-            for k, v in araliklar.items()
-        ]
+        return [{"range": k, "hacim": v} for k, v in araliklar.items()]

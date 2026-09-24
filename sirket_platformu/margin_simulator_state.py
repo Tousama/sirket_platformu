@@ -3,6 +3,33 @@ from typing import List, Dict, Any
 from .dashboard_state import DashboardState
 from .revision_diff_state import VERSIONS_DB
 
+try:
+    from .services.parsers import parse_sayi
+except ImportError:
+    try:
+        from services.parsers import parse_sayi
+    except ImportError:
+        import re
+        def parse_sayi(deger) -> float:
+            if not deger:
+                return 0.0
+            val = str(deger).strip()
+            val = re.sub(r"[^\d,\.-]", "", val)
+            if not val:
+                return 0.0
+            if "," in val and "." in val:
+                if val.rfind(",") > val.rfind("."):
+                    val = val.replace(".", "").replace(",", ".")
+                else:
+                    val = val.replace(",", "")
+            elif "," in val:
+                val = val.replace(",", ".")
+            try:
+                return float(val)
+            except ValueError:
+                return 0.0
+
+
 class MarginSimulatorState(rx.State):
     # Teklif Seçenekleri Listesi
     teklif_secenekleri: List[str] = []
@@ -14,7 +41,7 @@ class MarginSimulatorState(rx.State):
     secilen_teklif_kodu: str = ""
 
     # Kullanıcı Kontrolleri
-    iskonto_orani: float = 5.0
+    iskonto_orani: float = 0.0
     doviz_soku_orani: float = 0.0
     taban_marj_orani: float = 25.0
     taban_marj_str: str = "25"
@@ -31,7 +58,10 @@ class MarginSimulatorState(rx.State):
                 musteri = q.get("musteri", "")
                 maliyet = float(q.get("maliyet_try", 0.0))
                 satis = float(q.get("satis_try", 0.0))
-                label = f"{kod} | {musteri} | Maliyet: {maliyet:,.2f} ₺ | Satış: {satis:,.2f} ₺"
+                # Standart Türkçe formatında listele (Binlik nokta, ondalık virgül)
+                maliyet_fmt = f"{maliyet:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                satis_fmt = f"{satis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                label = f"{kod} | {musteri} | Maliyet: {maliyet_fmt} ₺ | Satış: {satis_fmt} ₺"
                 if label not in options:
                     options.append(label)
 
@@ -50,7 +80,9 @@ class MarginSimulatorState(rx.State):
             if satis == 0:
                 satis = float(v_data.get("satis", 349890.00))
 
-            label = f"{v_name} | {musteri} | Maliyet: {maliyet:,.2f} ₺ | Satış: {satis:,.2f} ₺"
+            maliyet_fmt = f"{maliyet:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            satis_fmt = f"{satis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            label = f"{v_name} | {musteri} | Maliyet: {maliyet_fmt} ₺ | Satış: {satis_fmt} ₺"
             if label not in options:
                 options.append(label)
 
@@ -67,20 +99,23 @@ class MarginSimulatorState(rx.State):
         self._update_selected_quote_data()
 
     def _update_selected_quote_data(self):
-        """Seçilen teklifin maliyet ve satış tutarını ayrıştırıp baz değerlere yükler."""
+        """Seçilen teklifin maliyet ve satış tutarını hem Türkçe hem Uluslararası formatı destekleyerek parse eder."""
         try:
-            # Örn: "PT202609201555 Deneme | Shell | Maliyet: 207.134,88 ₺ | Satış: 349.890,00 ₺"
             parts = self.secilen_teklif.split("|")
             self.secilen_teklif_kodu = parts[0].strip()
 
-            cost_str = parts[2].split("Maliyet:")[1].replace("₺", "").replace(".", "").replace(",", ".").strip()
-            sale_str = parts[3].split("Satış:")[1].replace("₺", "").replace(".", "").replace(",", ".").strip()
+            cost_part = parts[2].split("Maliyet:")[1].replace("₺", "").strip()
+            sale_part = parts[3].split("Satış:")[1].replace("₺", "").strip()
 
-            self.base_cost = float(cost_str)
-            self.base_sale = float(sale_str)
+            parsed_cost = parse_sayi(cost_part)
+            parsed_sale = parse_sayi(sale_part)
+
+            # parsed_cost >= 0 olmalıdır (0,00 ₺ geçerli bir maliyetsizlik durumudur):
+            self.base_cost = parsed_cost if parsed_cost >= 0 else 0.0
+            self.base_sale = parsed_sale if parsed_sale > 0 else 0.0
         except Exception:
-            self.base_cost = 207134.88
-            self.base_sale = 349890.00
+            self.base_cost = 0.0
+            self.base_sale = 0.0
 
     def set_iskonto(self, val: Any):
         if isinstance(val, list) and len(val) > 0:
@@ -115,7 +150,8 @@ class MarginSimulatorState(rx.State):
 
     @rx.var
     def simule_maliyet_str(self) -> str:
-        return f"{self.simule_maliyet:,.2f} ₺"
+        # Türkçe basamak formatı (Örn: 310.648,13 ₺)
+        return f"{self.simule_maliyet:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " ₺"
 
     @rx.var
     def iskontolu_satis(self) -> float:
@@ -123,7 +159,7 @@ class MarginSimulatorState(rx.State):
 
     @rx.var
     def iskontolu_satis_str(self) -> str:
-        return f"{self.iskontolu_satis:,.2f} ₺"
+        return f"{self.iskontolu_satis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " ₺"
 
     @rx.var
     def simule_net_kar(self) -> float:
@@ -131,13 +167,17 @@ class MarginSimulatorState(rx.State):
 
     @rx.var
     def simule_net_kar_str(self) -> str:
-        return f"{self.simule_net_kar:,.2f} ₺"
+        return f"{self.simule_net_kar:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " ₺"
 
     @rx.var
     def yeni_kar_marji(self) -> float:
         if self.simule_maliyet <= 0:
-            return 0.0
-        return round((self.simule_net_kar / self.simule_maliyet) * 100.0, 1)
+            # Maliyet henüz girilmemişse marj tam satış üzerinden %100 kabul edilir
+            return 100.0 if self.iskontolu_satis > 0 else 0.0
+        # Satış üzerinden marj hesabı: (Net Kar / Satış) * 100
+        if self.iskontolu_satis > 0:
+            return round((self.simule_net_kar / self.iskontolu_satis) * 100.0, 1)
+        return 0.0
 
     @rx.var
     def yeni_kar_marji_str(self) -> str:
@@ -145,11 +185,13 @@ class MarginSimulatorState(rx.State):
 
     @rx.var
     def en_dip_fiyat(self) -> float:
+        if self.simule_maliyet <= 0:
+            return 0.0
         return round(self.simule_maliyet * (1.0 + (self.taban_marj_orani / 100.0)), 2)
 
     @rx.var
     def en_dip_fiyat_str(self) -> str:
-        return f"{self.en_dip_fiyat:,.2f} ₺"
+        return f"{self.en_dip_fiyat:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " ₺"
 
     @rx.var
     def is_guvenli_bolge(self) -> bool:

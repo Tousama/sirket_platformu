@@ -1,8 +1,10 @@
 import sqlite3
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
-DB_PATH = "teklifler.db"
+# Mutlak yol: Proje kök dizinindeki teklifler.db
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "teklifler.db")
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -10,11 +12,8 @@ def get_connection():
     return conn
 
 def init_db():
-    """Tabloları ve ilişkileri oluşturur."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        
-        # 1. Teklifler Tablosu
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS teklifler (
                 kod TEXT PRIMARY KEY,
@@ -31,7 +30,6 @@ def init_db():
             )
         """)
 
-        # 2. Teklif Kalemleri Tablosu
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS teklif_kalemleri (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +44,6 @@ def init_db():
             )
         """)
 
-        # 3. Tedarikçi Maliyet / Fiyat Teklifleri Tablosu
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tedarikci_maliyetleri (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,16 +59,55 @@ def init_db():
         """)
         conn.commit()
 
-# --- VERİ YAZMA / OKUMA METOTLARI ---
+        # shared_quotes içerisindeki mevcut portföyü veritabanına otomatik taşı
+        try:
+            from ..shared_quotes import SHARED_QUOTES
+            for k, q_data in SHARED_QUOTES.items():
+                if isinstance(q_data, dict):
+                    kod = str(q_data.get("kod") or q_data.get("teklif_kodu") or k).strip().upper()
+                    cursor.execute("SELECT kod FROM teklifler WHERE kod = ?", (kod,))
+                    if not cursor.fetchone():
+                        s_val = float(q_data.get("satis_toplam") or q_data.get("satis_try") or q_data.get("satis") or 0.0)
+                        m_val = float(q_data.get("maliyet_toplam") or q_data.get("maliyet_try") or q_data.get("maliyet") or 0.0)
+                        cursor.execute("""
+                            INSERT INTO teklifler (kod, musteri, musteri_iletisim, konu, teklif_tarihi, sorumlu, satis_toplam, maliyet_toplam, durum, yaslanma_gun)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            kod,
+                            str(q_data.get("musteri", "-")),
+                            str(q_data.get("musteri_iletisim", "")),
+                            str(q_data.get("konu", "-")),
+                            str(q_data.get("teklif_tarihi") or q_data.get("tarih") or "-"),
+                            str(q_data.get("sorumlu", "Muhammed GÜNER")),
+                            s_val,
+                            m_val,
+                            str(q_data.get("durum", "Müşteride")),
+                            int(q_data.get("yaslanma_gun", 0))
+                        ))
+            conn.commit()
+        except Exception:
+            pass
+
 
 def save_teklif_full(teklif_data: Dict[str, Any], kalemler: List[Dict[str, Any]]):
-    """Teklifi ve tüm kalemlerini atomik (transaction) olarak kaydeder."""
     init_db()
     with get_connection() as conn:
         cursor = conn.cursor()
-        kod = teklif_data["kod"].strip().upper()
+        kod = str(teklif_data.get("kod") or teklif_data.get("teklif_kodu") or "").strip().upper()
 
-        # Teklif varsa güncelle, yoksa ekle
+        satis_val = float(
+            teklif_data.get("satis_toplam") 
+            or teklif_data.get("satis_try") 
+            or teklif_data.get("satis") 
+            or 0.0
+        )
+        maliyet_val = float(
+            teklif_data.get("maliyet_toplam") 
+            or teklif_data.get("maliyet_try") 
+            or teklif_data.get("maliyet") 
+            or 0.0
+        )
+
         cursor.execute("""
             INSERT INTO teklifler (kod, musteri, musteri_iletisim, konu, teklif_tarihi, sorumlu, satis_toplam, maliyet_toplam, durum, yaslanma_gun)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -87,22 +123,20 @@ def save_teklif_full(teklif_data: Dict[str, Any], kalemler: List[Dict[str, Any]]
                 yaslanma_gun=excluded.yaslanma_gun
         """, (
             kod,
-            teklif_data.get("musteri", ""),
+            teklif_data.get("musteri", "-"),
             teklif_data.get("musteri_iletisim", ""),
-            teklif_data.get("konu", ""),
-            teklif_data.get("teklif_tarihi", ""),
-            teklif_data.get("sorumlu", ""),
-            float(teklif_data.get("satis_try", 0.0)),
-            float(teklif_data.get("maliyet_try", 0.0)),
+            teklif_data.get("konu", "-"),
+            teklif_data.get("teklif_tarihi", "-"),
+            teklif_data.get("sorumlu", "-"),
+            satis_val,
+            maliyet_val,
             teklif_data.get("durum", "Müşteride"),
             int(teklif_data.get("yaslanma_gun", 0)),
         ))
 
-        # Önceki kalemleri temizle (güncelleme senaryosu)
         cursor.execute("DELETE FROM teklif_kalemleri WHERE teklif_kodu = ?", (kod,))
 
-        # Kalemleri ekle
-        for k in kalemler:
+        for k in (kalemler or []):
             ad = k.get("malzeme_adi") or k.get("tanim") or k.get("malzeme") or "Tanımsız Kalem"
             mik = float(k.get("miktar", 1.0))
             birim = str(k.get("birim", "Adet"))
@@ -117,14 +151,13 @@ def save_teklif_full(teklif_data: Dict[str, Any], kalemler: List[Dict[str, Any]]
 
         conn.commit()
 
+
 def add_tedarikci_maliyet(teklif_kodu: str, malzeme_adi: str, tedarikci: str, birim_maliyet: float, para_birimi: str = "TRY"):
-    """İlgili malzemenin altına tedarikçi fiyatını kaydeder."""
     init_db()
     with get_connection() as conn:
         cursor = conn.cursor()
-        kod = teklif_kodu.strip().upper()
+        kod = str(teklif_kodu).strip().upper()
 
-        # İlgili kalemin ID'sini bul
         cursor.execute("SELECT id FROM teklif_kalemleri WHERE teklif_kodu = ? AND malzeme_adi = ?", (kod, malzeme_adi))
         row = cursor.fetchone()
         if row:
@@ -135,8 +168,13 @@ def add_tedarikci_maliyet(teklif_kodu: str, malzeme_adi: str, tedarikci: str, bi
             """, (kalem_id, kod, tedarikci, birim_maliyet, para_birimi))
             conn.commit()
 
+
+def save_teklif_to_db(teklif_data: Dict[str, Any]):
+    kalemler = teklif_data.get("kalemler", [])
+    save_teklif_full(teklif_data, kalemler)
+
+
 def get_all_teklifler_from_db() -> List[Dict[str, Any]]:
-    """Dashboard ve listeleme ekranları için tüm teklifleri ve kalemlerini çeker."""
     init_db()
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -148,81 +186,24 @@ def get_all_teklifler_from_db() -> List[Dict[str, Any]]:
             t_dict = dict(t)
             kod = t_dict["kod"]
 
-            # Kalemleri ve tedarikçi fiyatlarını çek
             cursor.execute("SELECT * FROM teklif_kalemleri WHERE teklif_kodu = ?", (kod,))
             kalem_rows = cursor.fetchall()
-            
-            kalem_listesi = []
-            for k in kalem_rows:
-                k_dict = dict(k)
-                
-                # Bu kaleme ait tedarikçi fiyatları
-                cursor.execute("SELECT tedarikci_adi, birim_maliyet FROM tedarikci_maliyetleri WHERE kalem_id = ?", (k_dict["id"],))
-                ted_rows = cursor.fetchall()
-                fiyatlar = {r["tedarikci_adi"]: r["birim_maliyet"] for r in ted_rows}
-                k_dict["fiyatlar"] = fiyatlar
-                kalem_listesi.append(k_dict)
+            t_dict["kalemler"] = [dict(k) for k in kalem_rows]
 
-            t_dict["kalemler"] = kalem_listesi
+            s_val = float(t_dict.get("satis_toplam") or 0.0)
+            m_val = float(t_dict.get("maliyet_toplam") or 0.0)
+
+            t_dict["satis_try"] = s_val
+            t_dict["maliyet_try"] = m_val
+
             sonuc.append(t_dict)
             
         return sonuc
-    
-    
+
+
 def get_teklif_by_kod(kod: str) -> Dict[str, Any]:
-    """Belirtilen koda ait teklif kaydını döndürür."""
     teklifler = get_all_teklifler_from_db()
     for t in teklifler:
         if t.get("kod") == kod or t.get("teklif_kodu") == kod:
             return t
     return {}
-
-
-def save_teklif_to_db(teklif_data: Dict[str, Any]):
-    """Teklifi veritabanında günceller veya yoksa yeni kayıt olarak ekler."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    kod = teklif_data.get("kod") or teklif_data.get("teklif_kodu")
-    musteri = teklif_data.get("musteri", "")
-    konu = teklif_data.get("konu", "")
-    sorumlu = teklif_data.get("sorumlu", "")
-    tarih = teklif_data.get("teklif_tarihi", "")
-    durum = teklif_data.get("durum", "Müşteride")
-    yaslanma = int(teklif_data.get("yaslanma_gun", 0))
-    satis_try = float(teklif_data.get("satis_try", 0.0) or teklif_data.get("satis_toplam", 0.0))
-    maliyet_try = float(teklif_data.get("maliyet_try", 0.0) or teklif_data.get("maliyet_toplam", 0.0))
-    kalemler_json = json.dumps(teklif_data.get("kalemler", []), ensure_ascii=False)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS teklifler (
-            kod TEXT PRIMARY KEY,
-            musteri TEXT,
-            konu TEXT,
-            sorumlu TEXT,
-            teklif_tarihi TEXT,
-            durum TEXT,
-            yaslanma_gun INTEGER,
-            satis_try REAL,
-            maliyet_try REAL,
-            kalemler TEXT
-        )
-    """)
-
-    cursor.execute("""
-        INSERT INTO teklifler (kod, musteri, konu, sorumlu, teklif_tarihi, durum, yaslanma_gun, satis_try, maliyet_try, kalemler)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(kod) DO UPDATE SET
-            musteri=excluded.musteri,
-            konu=excluded.konu,
-            sorumlu=excluded.sorumlu,
-            teklif_tarihi=excluded.teklif_tarihi,
-            durum=excluded.durum,
-            yaslanma_gun=excluded.yaslanma_gun,
-            satis_try=excluded.satis_try,
-            maliyet_try=excluded.maliyet_try,
-            kalemler=excluded.kalemler
-    """, (kod, musteri, konu, sorumlu, tarih, durum, yaslanma, satis_try, maliyet_try, kalemler_json))
-
-    conn.commit()
-    conn.close()

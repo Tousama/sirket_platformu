@@ -201,12 +201,9 @@ class TechnicalScopeState(rx.State):
         isveren_list = []
         haric_list = []
 
-        # =====================================================================
         # SENARYO 1: AKARYAKIT TERMİNALİ DOLUM ADASI & KABLAJ REVİZYONU
-        # =====================================================================
         if is_terminal_ada_revizyon:
             kapsam_tipi = "Akaryakıt Terminali Dolum Adası & Elektrik-Kablaj Revizyonu (Anahtar Teslim)"
-            
             ada_no = "5 No'lu (9-10 numaralı peron)" if ("ada 5" in t_low or "ada-5" in t_low) else "Dolum Adası"
             
             giris = (
@@ -217,45 +214,36 @@ class TechnicalScopeState(rx.State):
 
             is_kapsami_list.append(f"• {ada_no} içerisindeki mevcut deforme kabloların, kablo tavalarının ve eski AC/DC bağlantı kutularının emniyetli demontajı ve terminal deposuna teslimi.")
             
-            # Junction Box tespiti
             jb_match = re.search(r"(\d+)\s*adet\s*(?:yeni)?\s*junction\s*box", t_low)
             jb_adet = jb_match.group(1) if jb_match else "2"
             is_kapsami_list.append(f"• Saha koşullarına ve Ex-proof normlara tam uyumlu {jb_adet} adet yeni Junction Box temini, kaide montajı ve etiketlenmesi.")
 
-            # Kablolama ve Tava
             is_kapsami_list.append("• Şartnameye uygun zırhlı enerji kabloları, enstrüman sinyal kabloları, AccuLoad multi kabloları ve Ex-d/Ex-e zırhlı kablo glandlerinin (rakorlarının) temini ve çekimi.")
             is_kapsami_list.append("• Sıcak daldırma galvaniz kablo tavaları, kapakları, ek parçaları ve ağır hizmet mekanik support (destek) elemanlarının temini ve montajı.")
 
-            # Katık & Saha Enstrümanları
             if "katık" in t_low or "enjektör" in t_low:
                 is_kapsami_list.append("• Mevcut katık enjektörleri ve ilgili saha enstrümanlarının elektriksel bağlantılarının kontrolü, yeni kablo tesisatına sonlandırılması ve test edilmesi.")
 
-            # Otomasyon Entegrasyonu (Flashtech vb.)
             if "flashtech" in t_low:
                 is_kapsami_list.append("• Flashtech Terminal Otomasyon Sistemi ile entegrasyonun sağlanması, I/O adresleme ve dolum adası tanımlamalarının yüklenici mühendislerince yapılması.")
             else:
                 is_kapsami_list.append("• Mevcut Terminal Otomasyon Sistemi (TAS) ile tam entegrasyon, sinyal testleri ve haberleşme doğrulamasının yapılması.")
 
-            # Test & Kalite Kontrol
             is_kapsami_list.append("• Saha kablo meger (izolasyon) testleri, pulse/sinyal süreklilik testleri, mühürleme ve sistemin eksiksiz devreye alınması.")
             is_kapsami_list.append("• İş bitiminde terminal personeline operasyonel eğitim verilmesi; As-Built projeler, test formları ve Kalite Kontrol Dosyasının (Soft & Hard Copy) teslimi.")
 
-            # İşveren Yükümlülükleri (Şartnameden doğrudan)
             isveren_list.append("• Çalışma yapılacak dolum adası ve hatların elektriksel izolasyonunun (LOTO) İşveren tarafından eksiksiz sağlanması.")
             if "forklift" in t_low:
                 isveren_list.append("• Terminal sınırları içerisindeki ağır taşıma ve kaldırma işlerinde terminalin mevcut forkliftinin yüklenici kullanımına tahsisi.")
             isveren_list.append("• Demonte edilen malzemelerin istifleneceği terminal içi uygun depo alanının gösterilmesi.")
             isveren_list.append("• İSG sıcak/soğuk saha çalışma izinlerinin (Permit to Work) iş takvimini aksatmayacak şekilde onaylanması.")
 
-            # Hariç Tutulanlar
             haric_list.append("• İnşaat, betonarme kaide, saha asfalt/zemin kırım ve hafriyat işleri.")
             haric_list.append("• Şartname kapsamında yer almayan mekanik borulama, boru deplasman ve kaynaklı hat tadilatları.")
             haric_list.append("• Ana otomasyon sunucuları ve Flashtech lisans ücretleri.")
             haric_list.append("• Terminal forklifti haricinde doğabilecek özel tonajlı vinç ve sepetli platform ihtiyaçları (gerektiğinde İşveren koordinasyonuyla sağlanır).")
 
-        # =====================================================================
         # SENARYO 2: TANK ÇİFTLİĞİ ENSTRÜMANTASYON & SEVİYE SİSTEMLERİ
-        # =====================================================================
         elif is_tank_ciftligi:
             kapsam_tipi = "Tank Sahası Enstrümantasyon & Aşırı Dolum Önleme (Overfill) Sistemi"
             giris = (
@@ -274,9 +262,7 @@ class TechnicalScopeState(rx.State):
             haric_list.append("• Tank nozul kaynakları, mekanik boru işleri ve yapısal çelik platform tadilatları.")
             haric_list.append("• Enerji temini için ana trafo/şalt sahasındaki ana pano tadilatları.")
 
-        # =====================================================================
         # SENARYO 3: SAF MALZEME / ENSTRÜMAN TEMİNİ (SUPPLY ONLY)
-        # =====================================================================
         elif montaj_skoru <= 2 or "sadece temin" in t_low:
             kapsam_tipi = "Endüstriyel Enstrüman & Malzeme Temini (Supply Only)"
             giris = (
@@ -293,9 +279,7 @@ class TechnicalScopeState(rx.State):
             haric_list.append("• Sahada mekanik ve elektriksel montaj, kablolama ve sonlandırma işçilikleri.")
             haric_list.append("• Saha loop testleri, enerji verme ve devreye alma hizmetleri.")
 
-        # =====================================================================
         # SENARYO 4: GENEL SAHA ELEKTRİK / ENSTRÜMANTASYON & MONTAJ
-        # =====================================================================
         else:
             kapsam_tipi = "Endüstriyel Elektrik, Kablaj & Enstrümantasyon Montajı"
             giris = (
@@ -325,7 +309,7 @@ class TechnicalScopeState(rx.State):
         }
 
     # =========================================================================
-    # EVENT HANDLERS
+    # EVENT HANDLERS (PDF VE DOCX AYRIŞTIRICI)
     # =========================================================================
     async def handle_upload_and_analyze(self, files: List[rx.UploadFile]):
         if not files:
@@ -338,22 +322,44 @@ class TechnicalScopeState(rx.State):
         file = files[0]
         self.uploaded_file_name = file.filename
         content = await file.read()
+        fn_low = file.filename.lower()
 
         raw_text = ""
         try:
-            pdf_reader = PdfReader(io.BytesIO(content))
-            for page in pdf_reader.pages:
-                t = page.extract_text()
-                if t:
-                    raw_text += t + "\n"
-        except Exception:
+            # 1. PDF İse:
+            if fn_low.endswith(".pdf"):
+                pdf_reader = PdfReader(io.BytesIO(content))
+                for page in pdf_reader.pages:
+                    t = page.extract_text()
+                    if t:
+                        raw_text += t + "\n"
+
+            # 2. DOCX (Word) İse:
+            elif fn_low.endswith(".docx"):
+                doc = Document(io.BytesIO(content))
+                # Paragrafları oku
+                for p in doc.paragraphs:
+                    if p.text.strip():
+                        raw_text += p.text + "\n"
+                # Tabloların içindeki metinleri ve şartname maddelerini oku
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_vals = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                        if row_vals:
+                            raw_text += " | ".join(row_vals) + "\n"
+            else:
+                self.is_analyzing = False
+                yield rx.toast.error("Yalnızca PDF ve DOCX dosyaları desteklenmektedir.", position="top-right")
+                return
+
+        except Exception as e:
             self.is_analyzing = False
-            yield rx.toast.error("PDF okunamadı, lütfen geçerli bir dosya yükleyin.", position="top-right")
+            yield rx.toast.error(f"Dosya okunamadı: {str(e)}", position="top-right")
             return
 
         if not raw_text.strip():
             self.is_analyzing = False
-            yield rx.toast.warning("PDF içerisinde okunabilir metin bulunamadı.", position="top-right")
+            yield rx.toast.warning("Yüklenen dosya içerisinde okunabilir metin bulunamadı.", position="top-right")
             return
 
         parsed = self._nlp_parse_specification(raw_text)

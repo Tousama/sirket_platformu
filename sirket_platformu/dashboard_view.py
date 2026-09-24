@@ -76,30 +76,11 @@ def status_badge(durum: str) -> rx.Component:
         ("Müşteride", rx.badge("Müşteride", color_scheme="cyan", variant="solid", radius="full", size="1")),
         ("Hazırlanıyor", rx.badge("Hazırlanıyor", color_scheme="gray", variant="surface", radius="full", size="1")),
         ("Kazanıldı", rx.badge("Kazanıldı", color_scheme="green", variant="solid", radius="full", size="1")),
+        ("Onaylandı", rx.badge("Onaylandı", color_scheme="green", variant="solid", radius="full", size="1")),
+        ("Revizyonda", rx.badge("Revizyonda", color_scheme="amber", variant="solid", radius="full", size="1")),
+        ("Reddedildi", rx.badge("Reddedildi", color_scheme="ruby", variant="solid", radius="full", size="1")),
         ("Reddedildi (Zaman Aşımı)", rx.badge("Reddedildi (Zaman Aşımı)", color_scheme="ruby", variant="solid", radius="full", size="1")),
         rx.badge(durum, variant="surface", radius="full", size="1"),
-    )
-
-def quote_table_row(q: Dict[str, Any]) -> rx.Component:
-    return rx.table.row(
-        rx.table.cell(rx.text(q["kod"].to(str), font_size="12px", font_weight="bold", color="#ffffff")),
-        rx.table.cell(rx.text(q["musteri"].to(str), font_size="12px", font_weight="600", color="#cbd5e1")),
-        rx.table.cell(rx.text(q["konu"].to(str), font_size="12px", color="#94a3b8")),
-        rx.table.cell(rx.text(q["sorumlu"].to(str), font_size="12px", color="#94a3b8")),
-        rx.table.cell(status_badge(q["durum"].to(str))),
-        rx.table.cell(rx.text(q["maliyet_str"].to(str) + " " + DashboardState.currency_symbol, font_size="12px", color="#cbd5e1")),
-        rx.table.cell(rx.text(q["satis_str"].to(str) + " " + DashboardState.currency_symbol, font_size="12px", font_weight="bold", color="#ffffff")),
-        rx.table.cell(rx.text("%" + q["marj"].to(str), font_size="12px", font_weight="bold", color="#4ade80")),
-        rx.table.cell(
-            rx.icon_button(
-                rx.icon("sliders-horizontal", size=14),
-                variant="ghost",
-                color_scheme="gray",
-                size="1",
-            ),
-            text_align="center",
-        ),
-        align="center",
     )
 
 def pie_chart_card() -> rx.Component:
@@ -372,7 +353,7 @@ def dashboard_main() -> rx.Component:
                                 width="220px",
                             ),
                             rx.select(
-                                ["Tüm Durumlar", "Müşteride", "Hazırlanıyor", "Kazanıldı", "Reddedildi (Zaman Aşımı)"],
+                                ["Tümü", "Müşteride", "Hazırlanıyor", "Kazanıldı", "Reddedildi (Zaman Aşımı)"],
                                 value=DashboardState.status_filter,
                                 on_change=DashboardState.set_status_filter,
                                 size="1",
@@ -403,8 +384,39 @@ def dashboard_main() -> rx.Component:
                                 rx.table.column_header_cell("İŞLEM"),
                             )
                         ),
+# dashboard_view.py içindeki rx.table.body kısmında ilgili hücreyi şöyle değiştirin:
+
                         rx.table.body(
-                            rx.foreach(DashboardState.filtered_quotes, quote_table_row)
+                            rx.foreach(
+                                DashboardState.filtered_quotes,
+                                lambda row: rx.table.row(
+                                    rx.table.cell(rx.text(row["kod"].to(str), font_size="12px", font_weight="bold", color="#ffffff")),
+                                    rx.table.cell(rx.text(row["musteri"].to(str), font_size="12px", font_weight="600", color="#cbd5e1")),
+                                    rx.table.cell(rx.text(row["konu"].to(str), font_size="12px", color="#94a3b8")),
+                                    rx.table.cell(rx.text(row["sorumlu"].to(str), font_size="12px", color="#94a3b8")),
+                                    rx.table.cell(status_badge(row["durum"].to(str))),
+                                    rx.table.cell(rx.text(row["formatted_maliyet"].to(str), font_size="12px", color="#cbd5e1")),
+                                    rx.table.cell(rx.text(row["formatted_satis"].to(str), font_size="12px", font_weight="bold", color="#ffffff")),
+                                    rx.table.cell(
+                                        rx.text(
+                                            row["formatted_kar_marji"].to(str),
+                                            font_size="12px",
+                                            font_weight="bold",
+                                            color="#4ade80",
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.icon_button(
+                                            rx.icon("sliders-horizontal", size=14),
+                                            variant="ghost",
+                                            color_scheme="gray",
+                                            size="1",
+                                        ),
+                                        text_align="center",
+                                    ),
+                                    align="center",
+                                )
+                            )
                         ),
                         width="100%",
                     ),
@@ -435,5 +447,5 @@ def dashboard_page() -> rx.Component:
         width="100%",
         height="100vh",
         overflow="hidden",
-        on_mount=DashboardState.load_quotes
+        on_mount=DashboardState.on_load
     )

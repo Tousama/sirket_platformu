@@ -13,8 +13,12 @@ from .price_catalog_view import price_catalog_page
 from .quote_upload_view import quote_upload_page
 from .cost_upload_view import cost_upload_page
 from .supplier_compare_view import supplier_compare_page
-from .technical_scope_state import TechnicalScopeState
 from .supplier_compare_state import SupplierCompareState
+from .procurement_coverage_view import procurement_coverage_page
+from .procurement_rfq_view import procurement_rfq_page
+from .cashflow_schedule_view import cashflow_schedule_page
+from .spec_validator_view import spec_validator_page
+from .incoming_mail_view import incoming_mail_page
 
 
 app = rx.App(
@@ -40,6 +44,7 @@ app.add_page(
     route="/",
     title="Dashboard (Analiz) | PetroTek",
     on_load=[
+        DashboardState.on_load,
         QuoteState.set_active_module("Dashboard (Analiz)"),
         DashboardState.start_hourly_rate_scheduler,  # TCMB saatlik arka plan çekicisini başlatır
     ],
@@ -143,3 +148,50 @@ app.add_page(
         SupplierCompareState.teklifleri_guncelle,  # <-- Veritabanından teklifleri yükler
     ],
 )
+
+
+
+# Satınalma Kapsama Raporu & Eksik Maliyet Analizi Sayfası
+app.add_page(
+    procurement_coverage_page,
+    route="/satinalma-kapsama",
+    title="Satınalma Kapsama Raporu | PetroTek",
+    on_load = QuoteState.set_active_module("Satınalma Kapsama Raporu"),
+)
+
+
+# Satınalma Kapsama Raporu & Eksik Maliyet Analizi Sayfası
+app.add_page(
+    procurement_rfq_page,
+    route="/satinalma-rfq",
+    title="Satınalma & RfQ İharcı | PetroTek",
+    on_load = QuoteState.set_active_module("Satınalma & RFQ İhracı"),
+           
+    
+)
+
+#Nakit Akışı ve Tedarik
+app.add_page(
+    cashflow_schedule_page,
+    route="/nakit-akisi-tedarik",
+    title="Nakit Akışı (Cash-Flow) & Tedarik | PetroTek",
+    on_load=QuoteState.set_active_module("Nakit Akışı (Cash-Flow) & Tedarik Çizel..."),
+)
+
+
+# Şartname Doğrulayıcı
+app.add_page(
+    spec_validator_page,
+    route="/sartname-dogrulayici",
+    title="Teknik Şartname & Datasheet Doğrulayıcı | PetroTek",
+    on_load=QuoteState.set_active_module("Teknik Şartname & Datasheet Doğrulayıcı"),
+)
+
+
+#Gelen Teklif Mailleri
+app.add_page(
+    incoming_mail_page, 
+    route="/gelen-mail", 
+    title="Gelen Teklif Mailleri (IMAP) | PetroTek",
+    on_load=QuoteState.set_active_module("Gelen Teklif Mailleri (IMAP)"),
+    )

@@ -1,51 +1,29 @@
 import reflex as rx
 from typing import List, Dict, Any
+import re
 from .dashboard_state import DashboardState
+from .shared_quotes import SHARED_QUOTES
 
-VERSIONS_DB: Dict[str, Dict[str, Any]] = {
-    "PT202609191725 (Rev 0 - Orijinal)": {
-        "musteri": "OMC Sıvı Depolama Terminali",
-        "konu": "LP Enstrümantasyon & Saha Kablaj İşi",
-        "sorumlu": "Muhammed GÜNER",
-        "items": {
-            "Level Inst. Transmitter": {"miktar": 2.0, "birim": "Adet", "birim_maliyet": 52000.0, "birim_satis": 78000.0},
-            "Pressure Transmitter 0-100 bar": {"miktar": 3.0, "birim": "Adet", "birim_maliyet": 24000.0, "birim_satis": 34000.0},
-            "Flow Switch (Akış Şalteri)": {"miktar": 1.0, "birim": "Adet", "birim_maliyet": 28000.0, "birim_satis": 43200.0},
-            "Saha Enstrümantasyon & Montaj İşçiliği": {"miktar": 1.0, "birim": "Hizmet", "birim_maliyet": 106648.13, "birim_satis": 169108.75},
-        }
-    },
-    "PT202609191725-Rev1 (Müşteri İndirimi)": {
-        "musteri": "OMC Sıvı Depolama Terminali",
-        "konu": "LP Enstrümantasyon & Saha Kablaj İşi",
-        "sorumlu": "Muhammed GÜNER",
-        "items": {
-            "Level Inst. Transmitter": {"miktar": 2.0, "birim": "Adet", "birim_maliyet": 52000.0, "birim_satis": 74250.0},
-            "Pressure Transmitter 0-100 bar": {"miktar": 3.0, "birim": "Adet", "birim_maliyet": 24000.0, "birim_satis": 32400.0},
-            "Flow Switch (Akış Şalteri)": {"miktar": 1.0, "birim": "Adet", "birim_maliyet": 28000.0, "birim_satis": 43200.0},
-            "Saha Enstrümantasyon & Montaj İşçiliği": {"miktar": 1.0, "birim": "Hizmet", "birim_maliyet": 106648.13, "birim_satis": 155000.0},
-        }
-    },
-    "PT202609191725-Rev2 (Kapsam Daraltma)": {
-        "musteri": "OMC Sıvı Depolama Terminali",
-        "konu": "LP Enstrümantasyon & Saha Kablaj İşi",
-        "sorumlu": "Muhammed GÜNER",
-        "items": {
-            "Level Inst. Transmitter": {"miktar": 1.0, "birim": "Adet", "birim_maliyet": 52000.0, "birim_satis": 74250.0},
-            "Pressure Transmitter 0-100 bar": {"miktar": 2.0, "birim": "Adet", "birim_maliyet": 24000.0, "birim_satis": 32400.0},
-            "Flow Switch (Akış Şalteri)": {"miktar": 1.0, "birim": "Adet", "birim_maliyet": 28000.0, "birim_satis": 43200.0},
-            "Saha Enstrümantasyon & Montaj İşçiliği": {"miktar": 1.0, "birim": "Hizmet", "birim_maliyet": 75000.0, "birim_satis": 120000.0},
-        }
-    },
-}
+try:
+    from .services.db_service import get_all_teklifler_from_db
+except ImportError:
+    try:
+        from services.db_service import get_all_teklifler_from_db
+    except ImportError:
+        get_all_teklifler_from_db = None
+
+# Geriye dönük uyumluluk için sözlük tanımlı bırakılır, ancak içerik dinamik doldurulur
+VERSIONS_DB: Dict[str, Dict[str, Any]] = {}
+
 
 class RevisionDiffState(rx.State):
-    eski_versiyon_secenekleri: List[str] = list(VERSIONS_DB.keys())
-    secilen_eski_versiyon: str = "PT202609191725 (Rev 0 - Orijinal)"
+    eski_versiyon_secenekleri: List[str] = []
+    secilen_eski_versiyon: str = ""
 
-    yeni_versiyon_secenekleri: List[str] = list(VERSIONS_DB.keys())
-    secilen_yeni_versiyon: str = "PT202609191725 (Rev 0 - Orijinal)"
+    yeni_versiyon_secenekleri: List[str] = []
+    secilen_yeni_versiyon: str = ""
 
-    yeni_revizyon_kodu: str = "PT202609191725-Rev3"
+    yeni_revizyon_kodu: str = ""
     revizyon_gerekcesi: str = "Kalem bazlı birim fiyat ve kapsam düzenlemesi"
 
     toplam_maliyet_str: str = "0,00 ₺"
@@ -58,9 +36,102 @@ class RevisionDiffState(rx.State):
     marj_fark_str: str = "%0.0 (Aynı)"
 
     diff_items: List[Dict[str, Any]] = []
+    has_revisions: bool = False
 
-    def on_load_recompute(self):
+    async def on_load_recompute(self):
+        """DashboardState ve DB'deki gerçek teklifleri tarar; sadece revizyonu olanları listeler."""
+        await self._sync_versions_from_data_source()
         self._calculate_diff()
+
+    async def _sync_versions_from_data_source(self):
+        dash_state = await self.get_state(DashboardState)
+        raw_list = getattr(dash_state, "raw_quotes", [])
+
+        pool = {}
+        if raw_list:
+            for q in raw_list:
+                kod = q.get("kod") or q.get("teklif_kodu", "")
+                if kod:
+                    pool[kod] = q
+
+        if get_all_teklifler_from_db:
+            try:
+                db_quotes = get_all_teklifler_from_db()
+                for q in db_quotes:
+                    kod = q.get("kod") or q.get("teklif_kodu", "")
+                    if kod and kod not in pool:
+                        pool[kod] = q
+            except Exception:
+                pass
+
+        # Teklifleri kök koduna göre grupla (Örn: PT202600153 ve PT202600153-Rev1)
+        root_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for kod, q in pool.items():
+            root_code = re.split(r"[-_\s]?(?:rev|r)\d*", kod, flags=re.IGNORECASE)[0].strip()
+            if root_code not in root_groups:
+                root_groups[root_code] = []
+            root_groups[root_code].append(q)
+
+        # Sadece revizyonlu (en az 2 versiyonu olan) teklifleri VERSIONS_DB formatına aktar
+        VERSIONS_DB.clear()
+        for root_code, q_list in root_groups.items():
+            if len(q_list) >= 2:
+                for q in q_list:
+                    kod = q.get("kod") or q.get("teklif_kodu", "")
+                    kalemler = q.get("kalemler", [])
+                    if not kalemler and kod in SHARED_QUOTES:
+                        kalemler = SHARED_QUOTES[kod].get("kalemler", [])
+
+                    items_dict = {}
+                    for k in kalemler:
+                        mat_name = str(k.get("malzeme_adi") or k.get("tanim") or "Tanımsız Kalem")
+                        items_dict[mat_name] = {
+                            "miktar": float(k.get("miktar", 1.0)),
+                            "birim": str(k.get("birim", "Adet")),
+                            "birim_maliyet": float(k.get("birim_maliyet", 0.0)),
+                            "birim_satis": float(k.get("birim_satis") or k.get("birim_fiyat") or 0.0),
+                        }
+
+                    # Kalem detayları yoksa ana toplamlar üzerinden tek kalem oluştur
+                    if not items_dict:
+                        items_dict[q.get("konu", "Genel Kapsam")] = {
+                            "miktar": 1.0,
+                            "birim": "Set",
+                            "birim_maliyet": float(q.get("maliyet_try", 0.0)),
+                            "birim_satis": float(q.get("satis_try") or q.get("satis_orijinal") or 0.0),
+                        }
+
+                    VERSIONS_DB[kod] = {
+                        "musteri": q.get("musteri", "-"),
+                        "konu": q.get("konu", "-"),
+                        "sorumlu": q.get("sorumlu", "-"),
+                        "items": items_dict,
+                    }
+
+        all_keys = list(VERSIONS_DB.keys())
+        if len(all_keys) >= 2:
+            self.eski_versiyon_secenekleri = all_keys
+            self.yeni_versiyon_secenekleri = all_keys
+            if self.secilen_eski_versiyon not in all_keys:
+                self.secilen_eski_versiyon = all_keys[0]
+            if self.secilen_yeni_versiyon not in all_keys:
+                self.secilen_yeni_versiyon = all_keys[1]
+            self.has_revisions = True
+            base_clean = re.split(r"[-_\s]?(?:rev|r)\d*", self.secilen_eski_versiyon, flags=re.IGNORECASE)[0].strip()
+            self.yeni_revizyon_kodu = f"{base_clean}-Rev{len(all_keys)}"
+        else:
+            self.eski_versiyon_secenekleri = []
+            self.yeni_versiyon_secenekleri = []
+            self.secilen_eski_versiyon = ""
+            self.secilen_yeni_versiyon = ""
+            self.diff_items = []
+            self.has_revisions = False
+            self.toplam_maliyet_str = "0,00 ₺"
+            self.toplam_satis_str = "0,00 ₺"
+            self.kar_marji_str = "%0.0"
+            self.maliyet_fark_str = "0,00 ₺ (Aynı)"
+            self.satis_fark_str = "0,00 ₺ (Aynı)"
+            self.marj_fark_str = "%0.0 (Aynı)"
 
     def set_secilen_eski_versiyon(self, val: str):
         self.secilen_eski_versiyon = val
@@ -77,6 +148,9 @@ class RevisionDiffState(rx.State):
         self.revizyon_gerekcesi = val
 
     def _calculate_diff(self):
+        if not self.has_revisions:
+            return
+
         v_old = VERSIONS_DB.get(self.secilen_eski_versiyon, {})
         v_new = VERSIONS_DB.get(self.secilen_yeni_versiyon, {})
 
@@ -107,10 +181,9 @@ class RevisionDiffState(rx.State):
                 "malzeme": mat,
                 "birim": new_item.get("birim", "Adet"),
                 "birim_maliyet": birim_cost,
-                "eski_miktar": f"{int(eski_miktar)} {old_item['birim']}",
-                "yeni_miktar": str(int(yeni_miktar)),
+                "eski_miktar": f"{int(eski_miktar) if eski_miktar.is_integer() else eski_miktar} {old_item['birim']}",
+                "yeni_miktar": str(int(yeni_miktar)) if yeni_miktar.is_integer() else str(yeni_miktar),
                 "eski_birim_satis": f"{eski_birim_satis:,.2f}",
-                # İnput içinde saf float tutulur (birim satış fiyatı)
                 "yeni_birim_satis": str(round(yeni_birim_satis, 2)),
                 "yeni_birim_satis_num": yeni_birim_satis,
                 "eski_toplam_satis": f"{eski_toplam_satis:,.2f}",
@@ -126,7 +199,6 @@ class RevisionDiffState(rx.State):
         self._recompute_totals_from_items()
 
     def update_item_qty(self, malzeme: str, val: str):
-        """Miktar değiştiğinde: Birim Fiyat korunur, Toplam Satış ve Maliyet paralel güncellenir."""
         try:
             new_qty = float(val) if val.strip() else 0.0
         except ValueError:
@@ -136,13 +208,11 @@ class RevisionDiffState(rx.State):
             if row["malzeme"] == malzeme:
                 row["yeni_miktar"] = str(int(new_qty)) if new_qty.is_integer() else str(new_qty)
                 unit_price = float(row.get("yeni_birim_satis_num", 0.0))
-                
-                # Yeni Toplam Satış = Yeni Miktar * Birim Satış
+
                 new_total_sales = round(new_qty * unit_price, 2)
                 row["yeni_toplam_satis_num"] = new_total_sales
                 row["yeni_toplam_satis"] = f"{new_total_sales:,.2f}"
 
-                # Eski toplam satışla fark
                 eski_toplam = float(row["eski_toplam_satis"].replace(".", "").replace(",", "."))
                 fark_val = new_total_sales - eski_toplam
                 row["fark"] = f"{fark_val:,.2f}" if fark_val <= 0 else f"+{fark_val:,.2f}"
@@ -155,7 +225,6 @@ class RevisionDiffState(rx.State):
         self._recompute_totals_from_items()
 
     def update_item_unit_price(self, malzeme: str, val: str):
-        """Birim Satış Fiyatı değiştiğinde: Toplam Satış = Miktar * Yeni Birim Fiyat olarak güncellenir."""
         val_str = str(val).strip()
         if not val_str:
             return
@@ -194,11 +263,9 @@ class RevisionDiffState(rx.State):
     def _recompute_totals_from_items(self):
         v_old = VERSIONS_DB.get(self.secilen_eski_versiyon, {})
 
-        # 1. Eski toplam maliyet ve satış
         c_old = sum(float(it.get("birim_maliyet", 0.0)) * float(it.get("miktar", 1.0)) for it in v_old.get("items", {}).values())
         s_old = sum(float(it.get("birim_satis", 0.0)) * float(it.get("miktar", 1.0)) for it in v_old.get("items", {}).values())
 
-        # 2. Yeni toplam maliyet (Yeni Miktar * Birim Maliyet)
         total_new_cost = 0.0
         for row in self.diff_items:
             try:
@@ -207,7 +274,6 @@ class RevisionDiffState(rx.State):
                 q = 0.0
             total_new_cost += q * float(row.get("birim_maliyet", 0.0))
 
-        # 3. Yeni toplam satış (Yeni Miktar * Yeni Birim Satış)
         total_new_sales = sum(float(row.get("yeni_toplam_satis_num", 0.0)) for row in self.diff_items)
 
         diff_c = total_new_cost - c_old
@@ -243,9 +309,9 @@ class RevisionDiffState(rx.State):
         clean_kod = self.yeni_revizyon_kodu.strip()
         v_base = VERSIONS_DB.get(self.secilen_yeni_versiyon, VERSIONS_DB.get(self.secilen_eski_versiyon, {}))
 
-        orijinal_musteri = v_base.get("musteri", "OMC Sıvı Depolama Terminali")
-        orijinal_konu = v_base.get("konu", "LP Enstrümantasyon & Saha Kablaj İşi")
-        orijinal_sorumlu = v_base.get("sorumlu", "Muhammed GÜNER")
+        orijinal_musteri = v_base.get("musteri", "-")
+        orijinal_konu = v_base.get("konu", "İş Kapsamı")
+        orijinal_sorumlu = v_base.get("sorumlu", "Teknik Departman")
 
         total_new_cost = 0.0
         total_new_sales = 0.0
@@ -280,7 +346,7 @@ class RevisionDiffState(rx.State):
             "maliyet_try": round(total_new_cost, 2),
             "satis_try": round(total_new_sales, 2),
             "marj": marj,
-            "tarih": "2026-09-23",
+            "tarih": "2026-09-24",
             "yaslanma_gun": 0,
             "para_birimi": "TRY",
         }
@@ -288,8 +354,7 @@ class RevisionDiffState(rx.State):
         dash_state = await self.get_state(DashboardState)
         dash_state.raw_quotes.insert(0, yeni_dashboard_satiri)
 
-        yeni_ad = f"{clean_kod} ({self.revizyon_gerekcesi[:25]})"
-        VERSIONS_DB[yeni_ad] = {
+        VERSIONS_DB[clean_kod] = {
             "musteri": orijinal_musteri,
             "konu": orijinal_konu,
             "sorumlu": orijinal_sorumlu,
@@ -297,9 +362,9 @@ class RevisionDiffState(rx.State):
         }
         self.eski_versiyon_secenekleri = list(VERSIONS_DB.keys())
         self.yeni_versiyon_secenekleri = list(VERSIONS_DB.keys())
-        self.secilen_yeni_versiyon = yeni_ad
+        self.secilen_yeni_versiyon = clean_kod
 
         return rx.toast.success(
-            f"'{clean_kod}' ({orijinal_musteri}) birim fiyat ve miktarlarıyla Dashboard'a aktarıldı!",
+            f"'{clean_kod}' revizyonu Dashboard'a aktarıldı!",
             position="top-right"
         )

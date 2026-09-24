@@ -38,6 +38,11 @@ MODULE_ROUTES = {
     "Teklif Yükle (PDF / Excel)": "/teklif-yukle",
     "Maliyet Yükle (PDF / Excel)": "/maliyet-yukle",  # <-- Eklendi
     "Akıllı Tedarikçi Karşılaştırma & Sepet O...": "/tedarikci-karsilastir",
+    "Satınalma Kapsama Raporu": "/satinalma-kapsama",
+    "Satınalma & RFQ İhracı": "/satinalma-rfq",
+    "Nakit Akışı (Cash-Flow) & Tedarik Çizel...": "/nakit-akisi-tedarik",
+    "Teknik Şartname & Datasheet Doğrulayıcı": "/sartname-dogrulayici",
+    "Gelen Teklif Mailleri (IMAP)": "gelen-mail",
 }
 
 

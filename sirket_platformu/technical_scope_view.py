@@ -57,7 +57,7 @@ def upload_box() -> rx.Component:
                     padding_x="22px",
                     loading=TechnicalScopeState.is_analyzing,
                     on_click=TechnicalScopeState.handle_upload_and_analyze(
-                        rx.upload_files(upload_id="sartname_pdf_upload")
+                        rx.upload_files(upload_id="sartname_file_upload")
                     ),
                     _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 12px rgba(168, 85, 247, 0.35)"},
                 ),
@@ -65,7 +65,7 @@ def upload_box() -> rx.Component:
                 align_items="center",
             ),
 
-            # Geniş Drag & Drop Alanı
+            # Geniş Drag & Drop Alanı (PDF + DOCX Destekli)
             rx.upload(
                 rx.vstack(
                     rx.box(
@@ -75,18 +75,18 @@ def upload_box() -> rx.Component:
                         background="rgba(56, 189, 248, 0.1)",
                     ),
                     rx.text(
-                        "Teknik Şartname PDF dosyasını buraya sürükleyip bırakın veya göz atmak için tıklayın",
+                        "Teknik Şartname (PDF veya Word) dosyasını buraya sürükleyip bırakın veya göz atmak için tıklayın",
                         font_size="13px",
                         font_weight="600",
                         color="#e2e8f0",
                     ),
                     rx.hstack(
-                        rx.text("Desteklenen Format: PDF", font_size="11.5px", color="#64748b"),
+                        rx.text("Desteklenen Formatlar: PDF, DOCX", font_size="11.5px", color="#64748b"),
                         rx.text("•", color="#475569", font_size="11.5px"),
                         rx.text("Maks. 50 MB", font_size="11.5px", color="#64748b"),
                         rx.text("•", color="#475569", font_size="11.5px"),
                         rx.foreach(
-                            rx.selected_files("sartname_pdf_upload"),
+                            rx.selected_files("sartname_file_upload"),
                             lambda f: rx.badge(rx.icon("file-check", size=12), f, color_scheme="green", variant="solid", radius="full", size="1")
                         ),
                         spacing="2",
@@ -98,13 +98,17 @@ def upload_box() -> rx.Component:
                     padding_y="22px",
                     width="100%",
                 ),
-                id="sartname_pdf_upload",
+                id="sartname_file_upload",
                 border="2px dashed rgba(56, 189, 248, 0.35)",
                 border_radius="12px",
                 background="rgba(56, 189, 248, 0.02)",
                 cursor="pointer",
                 width="100%",
-                accept={".pdf": ["application/pdf"]},
+                accept={
+                    "application/pdf": [".pdf"],
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+                    "application/msword": [".doc"],
+                },
                 max_files=1,
                 _hover={
                     "border_color": "#38bdf8",
